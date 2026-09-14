@@ -428,6 +428,24 @@ For local transcription:
 - The synchronization branch was merged into local `main`, published to
   `origin/main`, and verified to be 0 commits behind `upstream/main`.
 
+## 2026-09-14 — Accepted settings PR and provider PR outcome
+
+- Official pull request #22, `fix(settings): allow complete config saves with
+  unchanged persona`, was accepted and merged into `upstream/main` as
+  `6ef2e0b`.
+- The accepted settings changes are now included in this repository's
+  customized `main` through origin merge commit `268d35c`.
+- Official pull request #23, `feat(llm): expand provider support and preserve
+  failover errors`, was closed without merging (`merged: false`).
+- The provider expansion therefore remains a deliberate customized-fork
+  feature. Its branch `feat/expand-llm-providers` and provider implementation
+  are retained on `origin/main`; they must not be described as official
+  upstream functionality.
+- Do not delete or overwrite the provider implementation merely because the
+  official branch does not contain it. If the user later wants another
+  upstream attempt, prepare a clean, project-only branch and exclude this
+  private `changes.md` and all other personal files.
+
 ## Complete repository history covered by this log
 
 The following entries summarize the earlier changes that were carried into
