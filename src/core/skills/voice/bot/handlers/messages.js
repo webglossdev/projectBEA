@@ -1,4 +1,5 @@
 const axios = require('axios');
+const FormData = require('form-data');
 const { Events } = require('discord.js');
 const { createErrorEmbed } = require('../utils/embed');
 const config = require('../config');
@@ -68,30 +69,55 @@ async function handleChat(client, message) {
         }
     }
 
-    // only react when addressed: a mention, a reply to Bea, or a DM
-    if (!(isMentioned || isReplyToBot || isDM)) return;
-
     const cleanContent = message.content
         .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
         .trim();
-    if (!cleanContent) return;
+    const audio = [...message.attachments.values()].find((attachment) => {
+        const contentType = (attachment.contentType || '').toLowerCase();
+        return contentType.startsWith('audio/') || /\.(oga|ogg|opus|mp3|wav|m4a|webm)$/i.test(attachment.name || '');
+    });
+    // An audio attachment is an intentional message, like a DM or a reply.
+    // Text in a busy channel still requires an explicit mention/reply.
+    if (!(isMentioned || isReplyToBot || isDM || audio)) return;
+    if (!cleanContent && !audio) return;
 
     const displayName = message.member
         ? message.member.displayName
         : (message.author.globalName || message.author.username);
 
-    // deposit a perception and return: Bea decides whether/how to answer and
-    // calls discord_reply / discord_send_message herself (no synchronous reply)
     try {
-        await axios.post(`${config.BRAIN_API_URL}/discord/chat`, {
-            username: displayName,
-            message: cleanContent,
-            channelId: message.channel.id,
-            userId: userId,
-            messageId: message.id,
-            isDm: isDM,
-            whitelisted,
-        });
+        if (audio) {
+            const response = await axios.get(audio.url, { responseType: 'arraybuffer' });
+            const form = new FormData();
+            form.append('file', response.data, {
+                filename: audio.name || 'discord_voice_message',
+                contentType: audio.contentType || 'application/octet-stream',
+            });
+            form.append('username', displayName);
+            form.append('user_id', userId);
+            form.append('channel_id', message.channel.id);
+            form.append('message_id', message.id);
+            form.append('is_dm', String(isDM));
+            form.append('whitelisted', String(whitelisted));
+            if (cleanContent) form.append('caption', cleanContent);
+            await axios.post(`${config.BRAIN_API_URL}/discord/voice-message`, form, {
+                headers: form.getHeaders(),
+                maxContentLength: 25 * 1024 * 1024,
+                maxBodyLength: 25 * 1024 * 1024,
+            });
+        } else {
+            // deposit a perception and return: Bea decides whether/how to answer
+            // and calls discord_reply / discord_send_message herself.
+            await axios.post(`${config.BRAIN_API_URL}/discord/chat`, {
+                username: displayName,
+                message: cleanContent,
+                channelId: message.channel.id,
+                userId: userId,
+                messageId: message.id,
+                isDm: isDM,
+                whitelisted,
+            });
+        }
     } catch (error) {
         console.error('Error talking to Brain:', error.message);
     }

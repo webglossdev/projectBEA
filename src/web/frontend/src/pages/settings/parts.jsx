@@ -21,9 +21,12 @@ export function Group({ title, description, children, className }) {
 }
 
 /** Choosing a provider is choosing a trade-off, so each card says what it costs. */
-export function ProviderChoice({ value, onChange, options, columns = 2 }) {
+export function ProviderChoice({ value, onChange, options, columns = 2, disabled = false }) {
     return (
-        <div className={cn('grid gap-2.5', columns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+        <div className={cn(
+            'grid gap-2.5',
+            columns === 4 ? 'lg:grid-cols-4 sm:grid-cols-2' : columns === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+        )}>
             {options.map((option) => {
                 const active = option.id === value;
                 return (
@@ -31,9 +34,11 @@ export function ProviderChoice({ value, onChange, options, columns = 2 }) {
                         key={option.id}
                         type="button"
                         onClick={() => onChange(option.id)}
+                        disabled={disabled}
                         aria-pressed={active}
                         className={cn(
                             'relative rounded-b2 border p-3 text-left transition-all',
+                            disabled && 'cursor-not-allowed opacity-60',
                             active ? 'border-transparent' : 'border-line hover:border-line-strong',
                         )}
                         style={active ? {

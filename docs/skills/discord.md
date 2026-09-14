@@ -47,6 +47,7 @@ Both directions are HTTP over localhost.
 │                                                          │
 │  FastAPI endpoints the bot calls back into:              │
 │      POST /discord/chat        text message              │
+POST /discord/voice-message Discord audio attachment│
 │      POST /discord/audio       voice heard in the call   │
 │      POST /voice/transcript    overheard speech          │
 │      POST /interrupt           barge-in                  │
@@ -80,6 +81,11 @@ beside the live loop: one turn at a time per channel, several channels at once.
 
 A scoped turn has no `speak` tool, so a written message is answered in writing —
 by construction rather than by a rule in the prompt.
+
+Audio attachments in Discord text channels arrive at `POST /discord/voice-message`,
+are transcribed by the configured STT backend, and then enter the same scoped
+conversation as text. Voice notes in Telegram follow the equivalent in-process
+path and use the same backend.
 
 **Overheard speech** (`POST /voice/transcript`) is a third path: it deposits a
 perception and returns without waiting. The attention gate decides whether it
