@@ -131,7 +131,9 @@ async def check_config(config: BrainConfig) -> Finding:
 
 
 async def check_keys(config: BrainConfig) -> Finding:
-    """Every provider the pools actually name has a key on this machine."""
+    """Every provider the pools actually name has what it needs on this machine."""
+    from src.modules.llm.providers import PROVIDERS
+
     wanted = set()
     for role in (MIND, BACKGROUND):
         for entry in config.models.get(role) or []:
@@ -144,23 +146,30 @@ async def check_keys(config: BrainConfig) -> Finding:
     if not wanted:
         wanted.add(config.llm_provider)
     # her ears run on the same key namespace as the llm, and are as keyed as it
-    # — unless they run on this machine, where there is nothing to key
-    if config.stt_provider and config.stt_provider not in STT_LOCAL:
+    # — unless they run on this machine, where there is nothing to key. An
+    # unknown transcriber is the stt factory's business, not a missing key.
+    if (config.stt_provider and config.stt_provider not in STT_LOCAL
+            and config.stt_provider in PROVIDERS):
         wanted.add(config.stt_provider)
 
-    optional_key_providers = {
-        "local", "ollama", "lmstudio",
-        "openai_compat", "openai_compatible",
-        "anthropic_compat", "anthropic_compatible",
-    }
-    missing = [
-        name for name in sorted(wanted)
-        if name not in optional_key_providers and not _key_for(config, name)
-    ]
+    unknown = sorted(name for name in wanted if name not in PROVIDERS)
+    if unknown:
+        return failed(f"unknown provider(s) {', '.join(unknown)}",
+                      "Check `models` in config.json: a spec is `provider:model`.")
+
+    missing = [name for name in sorted(wanted)
+               if PROVIDERS[name].needs_key and not _key_for(config, name)]
     if missing:
         return failed(f"no key for {', '.join(missing)}",
                       f"Put {', '.join(_env_var(name) for name in missing)} in {ENV_FILE}, "
                       f"or run `uv run bea --setup`.")
+
+    homeless = [name for name in sorted(wanted)
+                if PROVIDERS[name].url_field and not _url_for(config, name)]
+    if homeless:
+        fields = ", ".join(PROVIDERS[name].url_field for name in homeless)
+        return failed(f"no endpoint url for {', '.join(homeless)}",
+                      f"Set {fields} in config.json, or run `uv run bea --setup`.")
     return passed(", ".join(sorted(wanted)))
 
 
@@ -678,37 +687,37 @@ def _verdict(console, found: List[Tuple[str, Finding]]) -> int:
 
 
 def _env_var(provider: str) -> str:
-    return {
-        "openrouter": "OPENROUTER_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "groq": "GROQ_API_KEY",
-        "google_ai_studio": "GOOGLE_AI_STUDIO_KEY",
-        "google": "GOOGLE_AI_STUDIO_KEY",
-        "gemini": "GOOGLE_AI_STUDIO_KEY",
-        "openai_compat": "OPENAI_COMPAT_API_KEY",
-        "openai_compatible": "OPENAI_COMPAT_API_KEY",
-        "local": "LOCAL_API_KEY",
-        "ollama": "LOCAL_API_KEY",
-        "lmstudio": "LOCAL_API_KEY",
-        "claude": "ANTHROPIC_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "anthropic_compat": "ANTHROPIC_COMPAT_API_KEY",
-        "anthropic_compatible": "ANTHROPIC_COMPAT_API_KEY",
-    }.get(provider, f"{provider.upper()}_API_KEY")
+    from src.modules.llm.providers import PROVIDERS
+
+    preset = PROVIDERS.get(provider)
+    if preset is not None:
+        return preset.env_var
+    return f"{provider.upper()}_API_KEY"
 
 
 def _key_for(config: BrainConfig, provider: str) -> Optional[str]:
-    if provider in ("google_ai_studio", "google", "gemini"):
-        return getattr(config, "google_ai_studio_key", None) or os.getenv("GOOGLE_AI_STUDIO_KEY") or os.getenv("GEMINI_API_KEY")
-    if provider in ("claude", "anthropic"):
-        return getattr(config, "claude_key", None) or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
-    if provider in ("local", "ollama", "lmstudio"):
-        return getattr(config, "local_key", None) or os.getenv("LOCAL_API_KEY") or "local"
-    if provider in ("openai_compat", "openai_compatible"):
-        return getattr(config, "openai_compat_key", None) or os.getenv("OPENAI_COMPAT_API_KEY") or "openai_compat"
-    if provider in ("anthropic_compat", "anthropic_compatible"):
-        return getattr(config, "anthropic_compat_key", None) or os.getenv("ANTHROPIC_COMPAT_API_KEY") or "anthropic_compat"
-    return getattr(config, f"{provider}_key", None) or os.getenv(_env_var(provider))
+    from src.modules.llm.providers import PROVIDERS
+
+    preset = PROVIDERS.get(provider)
+    field = preset.key_field if preset is not None else f"{provider}_key"
+    return getattr(config, field, None) or os.getenv(_env_var(provider))
+
+
+def _url_for(config: BrainConfig, provider: str) -> str:
+    """The endpoint url a provider resolves to, mirroring the factory.
+
+    A configured url wins; otherwise the fixed one. Empty exactly when the
+    factory would refuse to build the client.
+    """
+    from src.modules.llm.providers import PROVIDERS
+
+    preset = PROVIDERS.get(provider)
+    if preset is None:
+        return ""
+    if preset.url_field:
+        configured = (getattr(config, preset.url_field, None) or "").strip()
+        return configured or preset.base_url
+    return preset.base_url
 
 
 def _model_of(client) -> str:
@@ -721,10 +730,13 @@ def _model_of(client) -> str:
 
 def _ears_fix(config: BrainConfig) -> str:
     if config.stt_provider in STT_LOCAL:
+        from src.modules.STT.faster_whisper_stt import device_advice
+
         return (f"Check `stt_model` in config.json is a whisper size it knows "
                 f"(tiny, base, small, medium, large-v3, large-v3-turbo), and that "
                 f"{config.faster_whisper_download_root or 'the model cache'} is "
-                f"writable — the first run downloads the weights.")
+                f"writable — the first run downloads the weights. "
+                f"{device_advice()}")
     return ("Check the STT key and model in config.json, and its network reach "
             "from this machine.")
 

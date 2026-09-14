@@ -187,7 +187,7 @@ def test_a_malformed_spec_is_skipped():
 
 
 def test_an_unknown_provider_is_skipped():
-    registry = ModelRegistry(Config(models={"mind": ["unknownprovider:llama3", "groq:openai/gpt-oss-20b"]}))
+    registry = ModelRegistry(Config(models={"mind": ["ollama:llama3", "groq:openai/gpt-oss-20b"]}))
     assert registry.get("mind").model_name == "openai/gpt-oss-20b"
 
 
@@ -195,21 +195,6 @@ def test_an_empty_pool_falls_back_to_the_legacy_single_model():
     """Existing configs must keep working untouched after the upgrade."""
     registry = ModelRegistry(Config(models={}, llm_provider="groq"))
     assert registry.get("mind").model_name == "openai/gpt-oss-20b"
-
-
-@pytest.mark.parametrize(
-    ("provider", "model_field", "model"),
-    [
-        ("google", "google_ai_studio_model", "gemini-2.0-flash"),
-        ("ollama", "local_model", "llama3.2"),
-        ("anthropic", "claude_model", "claude-3-7-sonnet-latest"),
-        ("anthropic_compatible", "anthropic_compat_model", "proxy-model"),
-    ],
-)
-def test_legacy_aliases_use_their_canonical_model_fields(provider, model_field, model):
-    registry = ModelRegistry(Config(models={}, llm_provider=provider, **{model_field: model}))
-
-    assert registry._legacy_specs("mind") == [f"{provider}:{model}"]
 
 
 def test_background_and_mind_are_separate_clients():

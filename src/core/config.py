@@ -30,11 +30,11 @@ SECRET_ENV_VARS: Dict[str, str] = {
     "openrouter_key": "OPENROUTER_API_KEY",
     "openai_key": "OPENAI_API_KEY",
     "groq_key": "GROQ_API_KEY",
-    "google_ai_studio_key": "GOOGLE_AI_STUDIO_KEY",
-    "openai_compat_key": "OPENAI_COMPAT_API_KEY",
-    "local_key": "LOCAL_API_KEY",
+    "google_key": "GOOGLE_API_KEY",
     "claude_key": "ANTHROPIC_API_KEY",
+    "openai_compat_key": "OPENAI_COMPAT_API_KEY",
     "anthropic_compat_key": "ANTHROPIC_COMPAT_API_KEY",
+    "local_key": "LOCAL_API_KEY",
     "orpheus_key": "ORPHEUS_API_KEY",
     "orpheus_endpoint": "ORPHEUS_ENDPOINT",
     "discord.token": "DISCORD_TOKEN",
@@ -66,7 +66,7 @@ class BrainConfig:
     soul_path: str = "data/prompts/soul.md"  # shared persona, prepended to every context
     system_prompt_path: str = "data/prompts/chat.md"  # deprecated: fallback when operating manual is absent
     operating_prompt_path: str = "data/prompts/operating.md"  # unified operating manual (speak tool, moods, perception)
-    llm_provider: str = "openrouter" # openrouter, openai, groq, google_ai_studio, openai_compat, local, claude, anthropic_compat
+    llm_provider: str = "openrouter" # openrouter, openai, groq, google, claude, openai_compat, anthropic_compat, local
 
     # openrouter (routes to virtually any model via one openai-compatible endpoint)
     openrouter_key: Optional[str] = field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY"))
@@ -80,28 +80,32 @@ class BrainConfig:
     groq_key: Optional[str] = field(default_factory=lambda: os.getenv("GROQ_API_KEY"))
     groq_model: str = "openai/gpt-oss-20b"
 
-    # google ai studio (aliases: google, gemini)
-    google_ai_studio_key: Optional[str] = field(default_factory=lambda: os.getenv("GOOGLE_AI_STUDIO_KEY") or os.getenv("GEMINI_API_KEY"))
-    google_ai_studio_model: str = "gemini-2.0-flash"
+    # google ai studio (gemini through its openai-compatible endpoint)
+    google_key: Optional[str] = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY"))
+    google_model: str = "gemini-3.8-flash"
 
-    # openai compatible (generic — together, vLLM, any openai-compat endpoint)
+    # claude (anthropic messages api)
+    claude_key: Optional[str] = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
+    claude_model: str = "claude-sonnet-5"
+
+    # any self-hosted openai-compatible server. chat completions is the
+    # universal default; flip openai_compat_api when the endpoint speaks
+    # the responses protocol instead
     openai_compat_key: Optional[str] = field(default_factory=lambda: os.getenv("OPENAI_COMPAT_API_KEY"))
-    openai_compat_base_url: str = "http://localhost:8000/v1"
-    openai_compat_model: str = "gpt-4o-mini"
+    openai_compat_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_COMPAT_BASE_URL", ""))
+    openai_compat_model: str = ""
+    openai_compat_api: str = "chat" # chat or responses
 
-    # local (ollama / lm studio / custom)
-    local_key: Optional[str] = field(default_factory=lambda: os.getenv("LOCAL_API_KEY"))
-    local_base_url: str = "http://localhost:11434/v1"
-    local_model: str = "llama3.2"
-
-    # claude api (aliases: anthropic)
-    claude_key: Optional[str] = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY"))
-    claude_model: str = "claude-3-7-sonnet-latest"
-
-    # anthropic compatible (generic proxy/gateway)
+    # any anthropic-compatible endpoint
     anthropic_compat_key: Optional[str] = field(default_factory=lambda: os.getenv("ANTHROPIC_COMPAT_API_KEY"))
-    anthropic_compat_base_url: str = "https://api.anthropic.com/v1"
-    anthropic_compat_model: str = "claude-3-7-sonnet-latest"
+    anthropic_compat_base_url: str = field(default_factory=lambda: os.getenv("ANTHROPIC_COMPAT_BASE_URL", ""))
+    anthropic_compat_model: str = ""
+
+    # the models on this machine (ollama, lm studio): no key, no account,
+    # nothing leaves the room. point the url at lm studio to switch runners
+    local_key: Optional[str] = field(default_factory=lambda: os.getenv("LOCAL_API_KEY"))
+    local_base_url: str = field(default_factory=lambda: os.getenv("LOCAL_BASE_URL", "http://localhost:11434/v1"))
+    local_model: str = "qwen3:8b"
 
     obs_text_source: Optional[str] = "AIText"
     obs_avatar_source: str = "BeaPNG"
@@ -260,12 +264,15 @@ class BrainConfig:
         "idle_after": 240.0,       # seconds of silence before an IDLE perception (monologue = last resort)
         "window": 0.3,             # perception aggregation window
         "burst_steps": 6,          # max reasoning steps per perception batch
-        "history_limit": 30,       # rolling context size
         "correlation_timeout": 90.0,  # how long an HTTP caller waits for Bea to respond
-        # scoped conversation turns (written channels, beside the live loop)
-        "conversation_history": 16,   # past messages of that channel in the turn
-        "conversation_steps": 3,      # a reply is not an expedition
-        "max_coalesced_runs": 3,      # cap on re-runs when messages keep arriving
+        # ongoing present: what counts as "happening right now" across a handoff
+        "hot_tokens": 30_000,         # max size of the ongoing present window
+        "hot_seconds": 1800,          # max age of an ongoing present message
+        # the one sliding window: ceiling, handoff trigger, resting size
+        "context_max_tokens": 150_000,
+        "handoff_trigger_tokens": 120_000,
+        "handoff_target_tokens": 50_000,
+        "context_handoff": True,      # off: the window only grows until the ceiling trims it
         # one jsonl a day of every turn she takes: the prompt in force, what she
         # was shown, what she did and what it cost. Nothing leaves the machine.
         "turn_log": True,
@@ -300,12 +307,16 @@ class BrainConfig:
         "enabled": True,
         "cooldown_seconds": 20,        # she just spoke: let the room breathe
         "voice_cooldown_seconds": 5,   # in a call 20s is not restraint, it is absence
-        "interject_threshold": 0.45,   # score needed to speak up unprompted
         "quiet_hours": [3, 9],         # never interjects here (being addressed still does)
         "trigger_words": [],           # empty = worked out from persona.name
         "hot_names": [],               # names that pull her into a conversation
         "self_ids": [],                # her own platform ids, to spot replies to her
-        "digest_max_lines": 8,
+        "followup_enabled": True,
+        "followup_window_seconds": 180,
+        "followup_max_turns": 3,
+        "followup_max_interposed": 3,
+        "followup_active_bonus": 5,
+        "followup_lookback": 30,
     })
 
     # how she feels, and how long it lasts. The mood colours her voice and her
@@ -336,12 +347,9 @@ class BrainConfig:
         self.load_from_file()
 
     # secret keys
-    SECRET_KEYS = [
-        "openrouter_key", "openai_key", "groq_key",
-        "google_ai_studio_key", "openai_compat_key", "local_key",
-        "claude_key", "anthropic_compat_key",
-        "orpheus_key", "orpheus_endpoint",
-    ]
+    SECRET_KEYS = ["openrouter_key", "openai_key", "groq_key", "google_key", "claude_key",
+                   "openai_compat_key", "anthropic_compat_key", "local_key",
+                   "orpheus_key", "orpheus_endpoint"]
 
     def load_from_file(self):
         """Loads configuration from config.json if it exists."""

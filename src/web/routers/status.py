@@ -25,24 +25,23 @@ def _engine_summary(brain: AIVtuberBrain) -> Dict[str, Any]:
         "openrouter": config.openrouter_model,
         "openai": config.openai_model,
         "groq": config.groq_model,
-        "google_ai_studio": config.google_ai_studio_model,
-        "google": config.google_ai_studio_model,
-        "gemini": config.google_ai_studio_model,
-        "openai_compat": config.openai_compat_model,
-        "openai_compatible": config.openai_compat_model,
-        "local": config.local_model,
-        "ollama": config.local_model,
-        "lmstudio": config.local_model,
+        "google": config.google_model,
         "claude": config.claude_model,
-        "anthropic": config.claude_model,
+        "openai_compat": config.openai_compat_model,
         "anthropic_compat": config.anthropic_compat_model,
-        "anthropic_compatible": config.anthropic_compat_model,
+        "local": config.local_model,
     }.get(config.llm_provider, "")
+    stt = getattr(brain, "stt", None)
+    stt_state: Dict[str, Any] = (
+        stt.status() if stt is not None and hasattr(stt, "status")
+        else {"provider": config.stt_provider, "loaded": stt is not None}
+    )
     return {
         "llm_provider": config.llm_provider,
         "model": model,
         "tts_provider": config.tts_provider,
         "stt_provider": config.stt_provider,
+        "stt": stt_state,
         "language": config.language,
         "obs_connected": bool(getattr(brain.obs, "client", None)),
     }
@@ -181,9 +180,20 @@ def overview(brain: AIVtuberBrain = Depends(get_brain)):
         "skills": skills,
         "memory": memory_counts(brain),
         "engine": _engine_summary(brain),
+        "context": (brain.consciousness.window_status()
+                    if brain.consciousness is not None else {"enabled": False}),
     }
 
 
 @router.get("/health")
 def health():
     return {"status": "ok", "brain": current_brain() is not None}
+
+
+@router.get("/context")
+def context_window(brain: AIVtuberBrain = Depends(get_brain)):
+    """The one sliding window: budget, handoff state, continuity."""
+    mind = getattr(brain, "consciousness", None)
+    if mind is None:
+        return {"enabled": False}
+    return {"enabled": True, **mind.window_status()}

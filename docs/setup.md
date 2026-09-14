@@ -63,6 +63,14 @@ Create a `.env` file in the project root:
 OPENROUTER_API_KEY=sk-or-...   # recommended: routes to any model
 OPENAI_API_KEY=sk-...
 GROQ_API_KEY=gsk_...
+GOOGLE_API_KEY=AIza...          # Google AI Studio: Gemini with a free tier
+ANTHROPIC_API_KEY=sk-ant-...    # Claude, called directly
+
+# Local models need no key. Ollama answers at http://localhost:11434/v1,
+# LM Studio at http://localhost:1234/v1 — pick the runner in `bea --setup`.
+# Only set these for a remote endpoint or one that wants a key.
+# LOCAL_API_KEY=""
+# LOCAL_BASE_URL="http://localhost:11434/v1"
 
 # TTS — only if using Orpheus
 ORPHEUS_API_KEY=...
@@ -232,6 +240,44 @@ path runs `int8` and is fast enough for `small`.
 
 ---
 
+## 7c. Local models (optional, and the interesting one)
+
+She can think on this machine too — no key, no account, no bill, and nothing
+you say leaves the room. Install one runner and pull a model:
+
+**Ollama** ([ollama.com](https://ollama.com)):
+
+```bash
+ollama pull qwen3:8b
+```
+
+**LM Studio** ([lmstudio.ai](https://lmstudio.ai)): download a model in the
+app, then start its server (Developer → Status: Running, port `1234`).
+
+Then pick **Local models** in `bea --setup`, or set it by hand:
+
+```json
+"llm_provider": "local",
+"local_base_url": "http://localhost:11434/v1",
+"local_model": "qwen3:8b"
+```
+
+Point `local_base_url` at `http://localhost:1234/v1` for LM Studio. The two
+runners can even share her: put one model in `models.mind` and a cheaper one
+in `models.background`, or mix a local model with a cloud one — when the
+laptop sleeps, the pool falls over to the key that is set.
+
+Two things to know. Every model in `mind` must support tool calling — she
+speaks only through tools, so a model without them never says a word, and the
+doctor tells you exactly that. And a local model is slower than Groq: she
+still answers in time, but the background pool is where small local models
+shine — the diary, the dreamer and the Minecraft body never needed a
+frontier model in the first place.
+
+[LLM modules →](modules/llm.md)
+
+---
+
 ## 8. Orpheus TTS Setup (optional)
 
 Orpheus is a high-quality expressive voice API hosted on [Baseten](https://baseten.co). It requires a manual deployment step before use:
@@ -382,7 +428,7 @@ The fastest way to figure out what is wrong is to run the built-in diagnostic:
 uv run bea --doctor    # or: make doctor
 ```
 
-Thirteen checks, run in the order the pieces depend on each other and stopped at
+Fifteen checks, run in the order the pieces depend on each other and stopped at
 the first blocking failure — there is no point testing the voice when there is
 no config file. Every failure carries the exact command that fixes it. The exit
 code is non-zero when something is blocking, so it works in a script.

@@ -49,14 +49,15 @@ This is `config.example.json` verbatim; it matches the dataclass defaults in
     "openrouter_model": "deepseek/deepseek-v4-flash",
     "openai_model": "gpt-5",
     "groq_model": "openai/gpt-oss-20b",
-    "google_ai_studio_model": "gemini-2.0-flash",
-    "openai_compat_base_url": "http://localhost:8000/v1",
-    "openai_compat_model": "gpt-4o-mini",
+    "google_model": "gemini-3.8-flash",
+    "claude_model": "claude-sonnet-5",
+    "openai_compat_base_url": "",
+    "openai_compat_model": "",
+    "openai_compat_api": "chat",
+    "anthropic_compat_base_url": "",
+    "anthropic_compat_model": "",
     "local_base_url": "http://localhost:11434/v1",
-    "local_model": "llama3.2",
-    "claude_model": "claude-3-7-sonnet-latest",
-    "anthropic_compat_base_url": "https://api.anthropic.com/v1",
-    "anthropic_compat_model": "claude-3-7-sonnet-latest",
+    "local_model": "qwen3:8b",
     "obs_text_source": "AIText",
     "obs_avatar_source": "BeaPNG",
     "obs_source_type": "image",
@@ -182,11 +183,13 @@ This is `config.example.json` verbatim; it matches the dataclass defaults in
         "idle_after": 240.0,
         "window": 0.3,
         "burst_steps": 6,
-        "history_limit": 30,
         "correlation_timeout": 90.0,
-        "conversation_history": 16,
-        "conversation_steps": 3,
-        "max_coalesced_runs": 3
+        "context_max_tokens": 150000,
+        "handoff_trigger_tokens": 120000,
+        "handoff_target_tokens": 50000,
+        "hot_tokens": 30000,
+        "hot_seconds": 1800.0,
+        "context_handoff": true
     },
     "models": {
         "mind": [
@@ -202,18 +205,19 @@ This is `config.example.json` verbatim; it matches the dataclass defaults in
         "enabled": true,
         "cooldown_seconds": 20,
         "voice_cooldown_seconds": 5,
-        "interject_threshold": 0.45,
         "quiet_hours": [
             3,
             9
         ],
-        "trigger_words": [
-            "bea",
-            "beatrice"
-        ],
+        "trigger_words": [],
         "hot_names": [],
         "self_ids": [],
-        "digest_max_lines": 8
+        "followup_enabled": true,
+        "followup_window_seconds": 180,
+        "followup_max_turns": 3,
+        "followup_max_interposed": 3,
+        "followup_active_bonus": 5,
+        "followup_lookback": 30
     },
     "rhythm": {
         "enabled": true,
@@ -242,7 +246,12 @@ This is `config.example.json` verbatim; it matches the dataclass defaults in
 | `soul_path` | `data/prompts/soul.md` | Who she is. Prepended to every context, never edited by the engine |
 | `operating_prompt_path` | `data/prompts/operating.md` | How she exists: the `speak` tool, the moods, what she notices |
 | `system_prompt_path` | `data/prompts/chat.md` | Deprecated. Only used if the operating manual is missing |
-| `llm_provider` | `"openrouter"` | Only used when `models` has no pool for a role |
+| `llm_provider` | `"openrouter"` | Only used when `models` has no pool for a role. One of `openrouter`, `openai`, `groq`, `google`, `claude`, `openai_compat`, `anthropic_compat`, `local` |
+| `openai_compat_base_url` / `anthropic_compat_base_url` | `""` | Your endpoint, ending in `/v1`. Empty means the provider cannot build and the pool skips it with a warning |
+| `openai_compat_model` / `anthropic_compat_model` | `""` | The model id your endpoint serves — only you know it |
+| `openai_compat_api` | `"chat"` | `chat` or `responses`. Flip it when your endpoint speaks the Responses protocol |
+| `local_base_url` | `"http://localhost:11434/v1"` | Ollama's address. LM Studio answers at `http://localhost:1234/v1` |
+| `local_model` | `"qwen3:8b"` | Any model the runner serves. Every model in `mind` must support tool calling |
 
 ---
 
@@ -261,7 +270,7 @@ rate limits and fall back down the list on failure.
 
 | Role | Used by | Requirement |
 |---|---|---|
-| `mind` | the consciousness, scoped conversation turns | **must support tool calling** |
+| `mind` | the consciousness | **must support tool calling** |
 | `background` | diary, dreamer, profiler, summaries, the Minecraft body | anything |
 
 An empty pool falls back to `llm_provider` + `<provider>_model`, so a
@@ -280,11 +289,13 @@ engine refuses to start and says which key is missing.
 | `idle_after` | `240.0` | Seconds of silence before an IDLE perception. Only applies while the `monologue` skill is on |
 | `window` | `0.3` | How long the bus coalesces a burst into one batch |
 | `burst_steps` | `6` | Max reasoning steps in one turn |
-| `history_limit` | `30` | Rolling context size, in messages |
 | `correlation_timeout` | `90.0` | How long an HTTP caller waits for her reply before giving up |
-| `conversation_history` | `16` | Past messages of a channel included in a scoped turn |
-| `conversation_steps` | `3` | Max steps in a scoped turn — a reply is not an expedition |
-| `max_coalesced_runs` | `3` | Cap on re-runs when messages keep arriving mid-turn |
+| `context_max_tokens` | `150000` | Hard ceiling of the one sliding window, in tokens |
+| `handoff_trigger_tokens` | `120000` | Window size that starts the background handoff |
+| `handoff_target_tokens` | `50000` | Size the window breathes back down to after a handoff |
+| `hot_tokens` | `30000` | Recent tokens kept verbatim across a handoff, never compressed |
+| `hot_seconds` | `1800.0` | Recent seconds kept verbatim across a handoff |
+| `context_handoff` | `true` | Off means the window only grows until the ceiling trims it |
 
 ---
 
@@ -297,12 +308,16 @@ What wakes the mind, and what she merely notices. [How it works →](architectur
 | `enabled` | `true` | Off means every perception costs a full reasoning cycle |
 | `cooldown_seconds` | `20` | She just spoke: let the room breathe. Being addressed bypasses it |
 | `voice_cooldown_seconds` | `5` | The same, in a live call — where twenty seconds reads as absence, not restraint |
-| `interject_threshold` | `0.45` | Score needed to speak up unprompted. ±0.1 of noise is added before comparing |
 | `quiet_hours` | `[3, 9]` | She never interjects in this window. Being addressed still gets through |
-| `trigger_words` | `["bea", "beatrice"]` | Her names. Whole-word, one typo tolerated. Shared by every platform |
+| `trigger_words` | `[]` | Her names; empty means derived from the persona name. Whole-word, one typo tolerated. Shared by every platform |
 | `hot_names` | `[]` | Other names that pull her into a conversation |
 | `self_ids` | `[]` | Her own platform ids, so a reply to her is recognised as addressed |
-| `digest_max_lines` | `8` | Cap on the `[WHILE YOU WERE BUSY]` block |
+| `followup_enabled` | `true` | Off, a reply to her is scored like everything else |
+| `followup_window_seconds` | `180` | How long after she spoke an answer still counts as an answer |
+| `followup_max_turns` | `3` | How long she keeps it up before waiting to be called again |
+| `followup_max_interposed` | `3` | Unrelated lines allowed between her line and the reply |
+| `followup_active_bonus` | `5` | Extra weight for a reply in an already lively conversation |
+| `followup_lookback` | `30` | Recent window turns the reply check may read |
 
 ---
 
@@ -489,11 +504,11 @@ everywhere.
 | Variable | Used for |
 |---|---|
 | `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `GROQ_API_KEY` | LLM providers, and STT for Groq / OpenRouter |
-| `GOOGLE_AI_STUDIO_KEY` (or `GEMINI_API_KEY`) | Google AI Studio LLM provider |
-| `OPENAI_COMPAT_API_KEY` | OpenAI-compatible generic provider (optional) |
-| `LOCAL_API_KEY` | Local LLM provider (optional) |
-| `ANTHROPIC_API_KEY` (or `CLAUDE_API_KEY`) | Claude (Anthropic) LLM provider |
-| `ANTHROPIC_COMPAT_API_KEY` | Anthropic-compatible generic provider (optional) |
+| `GOOGLE_API_KEY` | Google AI Studio (Gemini) |
+| `ANTHROPIC_API_KEY` | Claude, called directly |
+| `OPENAI_COMPAT_API_KEY` / `OPENAI_COMPAT_BASE_URL` | A custom OpenAI-protocol endpoint. The key is optional — many local servers want none |
+| `ANTHROPIC_COMPAT_API_KEY` / `ANTHROPIC_COMPAT_BASE_URL` | A custom Messages-protocol endpoint, same deal |
+| `LOCAL_API_KEY` / `LOCAL_BASE_URL` | Local models. No key and the Ollama address by default; point the URL at LM Studio to switch runners |
 | `ORPHEUS_API_KEY` / `ORPHEUS_ENDPOINT` | Orpheus TTS |
 | `DISCORD_TOKEN` | The Discord bot |
 | `DISCORD_ADMIN_ID` | Fallback for `skills.discord.admin_id` |
@@ -518,11 +533,11 @@ uv run bea --web --llm-provider openrouter --tts-provider kokoro --device-id 22
 |---|---|
 | `--web` | Serve the dashboard instead of the terminal loop |
 | `--host` / `--port` | Default `127.0.0.1:8000`. See below before changing the host |
-| `--llm-provider` | `openrouter`, `openai`, `groq`, `google_ai_studio`, `openai_compat`, `local`, `claude`, `anthropic_compat` (and aliases). Only affects the legacy single-model path |
-| `--openrouter-key` / `--openrouter-model` | and the same pairs for `--openai-*`, `--groq-*`, `--google-ai-studio-*`, `--claude-*` |
-| `--openai-compat-key` / `--openai-compat-base-url` / `--openai-compat-model` | Generic OpenAI compatible provider flags |
-| `--local-key` / `--local-base-url` / `--local-model` | Local LLM provider flags |
-| `--anthropic-compat-key` / `--anthropic-compat-base-url` / `--anthropic-compat-model` | Generic Anthropic compatible provider flags |
+| `--llm-provider` | `openrouter`, `openai`, `groq`, `google`, `claude`, `openai_compat`, `anthropic_compat`, `local`. Only affects the legacy single-model path |
+| `--openrouter-key` / `--openrouter-model` | and the same pair for `--openai-*`, `--groq-*`, `--google-*` and `--claude-*` |
+| `--openai-compat-key` / `--openai-compat-base-url` / `--openai-compat-model` / `--openai-compat-api` | the custom OpenAI-protocol endpoint |
+| `--anthropic-compat-key` / `--anthropic-compat-base-url` / `--anthropic-compat-model` | the custom Messages-protocol endpoint |
+| `--local-key` / `--local-base-url` / `--local-model` | the models on this machine |
 | `--stt-provider` / `--stt-model` | `faster_whisper`, `groq` or `openrouter` |
 | `--tts-provider` / `--tts-voice` | `edge`, `kokoro`, `orpheus` |
 | `--orpheus-key` / `--orpheus-endpoint` / `--orpheus-voice` | |

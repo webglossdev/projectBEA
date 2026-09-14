@@ -12,7 +12,10 @@ her own to join a call or pull someone into one.
 
 It is the only skill that needs a **second runtime**: Discord voice requires
 `@discordjs/voice`, so a Node.js bot runs as a subprocess. Telegram and Twitch
-are in-process precisely because they are text only.
+are in-process precisely because they are text only. Discord encrypts voice
+end to end (DAVE) and enforces it on voice channels, so the bot joins with
+`daveEncryption: true` via `@snazzah/davey` — without it the bot shows up in
+the channel but stays deaf and mute.
 
 ---
 
@@ -26,8 +29,8 @@ src/core/skills/voice/
 ```
 
 `VoiceSurface` extends [`PlatformSkill`](overview.md#two-shapes-of-skill), so
-building an `Author` and sending text is all it owes; perception building,
-humanized delivery and the scoped conversation tools come from the base.
+building an `Author` and sending text is all it owes; perception building and
+humanized delivery come from the base.
 
 ---
 
@@ -76,12 +79,10 @@ rather than only the first.
 
 **Text** is not the stage. A message arrives at `POST /discord/chat`, becomes a
 `CHAT` perception carrying `conversation_key = "discord:<channel_id>"`, and the
-endpoint returns `{"status": "perceived"}` immediately. The message is routed to
-a [scoped conversation turn](../architecture.md#one-mind-two-clocks) that runs
-beside the live loop: one turn at a time per channel, several channels at once.
-
-A scoped turn has no `speak` tool, so a written message is answered in writing —
-by construction rather than by a rule in the prompt.
+endpoint returns `{"status": "perceived"}` immediately. The message is read in
+the one frame of the single loop and answered in writing via
+`send_message(platform="discord", …)` or `react` — never out loud, because a
+written channel has no `speak` tool.
 
 Audio attachments in Discord text channels arrive at `POST /discord/voice-message`,
 are transcribed by the configured STT backend, and then enter the same scoped
@@ -193,7 +194,11 @@ and discreet, three is the loudest person in the room.
 her at all. In voice she hears everyone in the channel — if you are in the room
 she can hear you — but an unlisted voice arrives with its salience damped, the
 same way an unlisted message does. Admin commands (`!wl add|remove|list`) are
-restricted to `ADMIN_ID` and unauthorised calls are silently ignored.
+restricted to `ADMIN_ID`; unauthorised calls get a reply saying so, and a
+stranger told they are not whitelisted learns their id and how to get in. The
+list is runtime state and lives untracked in `data/discord_whitelist.json`, so
+it never reads as local changes to the updater; an old
+`src/core/skills/voice/bot/whitelist.json` is picked up once and migrated.
 
 ---
 

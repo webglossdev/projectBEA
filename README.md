@@ -22,7 +22,7 @@
   <a href="https://github.com/emqnuele/projectBEA/actions/workflows/ci.yml"><img src="https://github.com/emqnuele/projectBEA/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="#run-it-in-docker"><img src="https://img.shields.io/badge/docker-compose%20up-2496ED?logo=docker&logoColor=white" alt="Docker" /></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue" alt="Python" /></a>
-  <a href="https://github.com/emqnuele/projectBEA/releases"><img src="https://img.shields.io/github/v/release/emqnuele/projectBEA" alt="Release" /></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Femqnuele%2FprojectBEA%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/emqnuele/projectBEA" alt="License" /></a>
 </p>
 
@@ -74,7 +74,9 @@ if you have Make. Every `make` target here is one `uv run` command underneath, s
 nothing needs Make: Windows in particular does not ship it.
 
 > [!NOTE]
-> She needs an API key from OpenRouter, OpenAI or Groq.
+> No API key needed: she runs on local models, on your own machine
+> ([below](#she-runs-on-your-machine-too)). A key from OpenRouter, OpenAI,
+> Groq, Google AI Studio or Claude gets you bigger models instead.
 
 ---
 
@@ -203,23 +205,38 @@ follows the audio as it plays.
 ## A busy chat costs almost nothing
 
 Answering every message is what makes an always-on persona expensive to run and
-exhausting to watch. Bea reacts to what concerns her and merely notices the rest.
+exhausting to watch. Bea reads everything and answers what matters: every
+perception enters one frame with a priority — addressed by name or answering
+her always first — and the model decides what deserves words.
 
 ```
-   30 messages a minute   ────────▶   4 model calls
+   30 messages a minute   ────────▶   one frame, one turn
 ```
 
-That is a measured number, not an illustration:
-`test_thirty_messages_a_minute_stay_under_four_model_calls` asserts it on every
-commit.
+Nothing is ever dropped at the gate; the cost control is architectural (one
+reasoning cycle per batch, not one per message).
 
-| Outcome | Cost | When |
-|---|---|---|
-| **React** | one model call | Addressed by name, spoken to directly, or something her own body reported. Goes through unconditionally, past cooldown and quiet hours. |
-| **Note** | none | Worth knowing, not worth stopping for. Becomes peripheral awareness she can bring up later, without having interrupted what she was doing. |
-| **Drop** | none | The volume of a busy chat. It still moves the room's activity level, so a loud stream feels loud to her, but no single message becomes a thought. |
+| Priority | When |
+|---|---|
+| **1.0** | Addressed by name, spoken to directly, answering her, or something her own body reported. Past cooldown and quiet hours. |
+| **scored** | Everything else, highest first. A loud stream feels loud to her; no single message is owed an answer. |
 
 **[The attention gate →](docs/architecture.md)**
+
+---
+
+## One mind, one window
+
+She does not keep a separate head per chat. Every turn lands in a single
+sliding context window — 150k tokens max — that breathes instead of filling
+up: around 120k a background handoff writes down what went cold ("you talked
+about food for two hours") while the last half hour travels verbatim, and the
+window settles back near 50k. What was happening stays happening.
+
+Because the window knows where she is, she answers *there*: a Telegram
+message gets a Telegram reply, never silence, never "I don't have Telegram".
+
+**[How the window works →](docs/architecture.md#the-sliding-window)**
 
 ---
 
@@ -307,23 +324,22 @@ thought. One mind reasons over it and acts through tools.
                   │ PerceptionBus │
                   └───────┬───────┘
                           ▼
-                  ┌───────────────┐   react / note / drop
-                  │   Attention   │───────────────┐
-                  └───────┬───────┘               │
-            react ────────┤                       │ noted
-                          ▼                       ▼
-        ┌─────────────────────────┐        [WHILE YOU WERE BUSY]
-        │  the live loop (stage)  │        peripheral awareness
-        │  voice · game · owner   │
+                  ┌───────────────┐   every perception,
+                  │   Attention   │   one priority each —
+                  └───────┬───────┘   nothing dropped
+                          ▼
+        ┌─────────────────────────┐
+        │  the one loop           │  one frame per batch,
+        │  voice · game · owner · │  ordered by priority
+        │  written channels       │
         └────────────┬────────────┘
-                     │  written channels
-                     ▼
-        ┌──────────────────────────┐
-        │ scoped conversation turns│  one per channel, in parallel
-        └──────────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        ▼                         ▼
+  Expression → voice+OBS    send_message → the channel
                      │
                      ▼  tools
-   speak · mc_chat · discord_reply · play_minecraft · objective_done · …
+   speak · send_message · react · say_nothing · play_minecraft · objective_done · …
                      │
                      ▼
         Expression → TTS + OBS      ·      bea.db (memory)
@@ -345,7 +361,7 @@ touching the core.
 
 | Component | Interface | Implementations |
 |---|---|---|
-| **LLM** | `LLMClient` (tool-aware) | OpenRouter, OpenAI, Groq |
+| **LLM** | `LLMClient` (tool-aware) | OpenRouter, OpenAI, Groq, Google AI Studio, Claude, any OpenAI- or Anthropic-compatible endpoint, local models (Ollama / LM Studio) |
 | **TTS** | `TTSInterface` | EdgeTTS (free), Kokoro (local ONNX), Orpheus (API) |
 | **STT** | `STTInterface` | Local Whisper (faster-whisper), Groq, OpenRouter |
 | **Avatar** | `AvatarInterface` | Images (OBS), 3D model (VRM), VTube Studio |
@@ -359,6 +375,26 @@ provider is down. Hot reload is built in: change models, voices or settings at
 runtime, without a restart.
 
 **[LLM →](docs/modules/llm.md)** · **[TTS →](docs/modules/tts.md)** · **[STT →](docs/modules/stt.md)** · **[Avatar →](docs/modules/avatar.md)** · **[OBS →](docs/modules/obs.md)**
+
+---
+
+## She runs on your machine too
+
+No key, no account, no bill — and nothing you say leaves the room. She thinks
+on local models through Ollama or LM Studio, voice and memory already run
+locally, so the whole of her can live on your hardware.
+
+```bash
+ollama pull qwen3:8b
+```
+
+Pick **Local models** in the setup, and that is the whole configuration. Her
+mind and her background are separate pools, so give the talking to a capable
+model and the diary, the dreamer and the Minecraft body to a small one — or
+mix a local model with a cloud key, and the pool falls over when the laptop
+sleeps.
+
+**[Local setup →](docs/setup.md#7c-local-models-optional-and-the-interesting-one)**
 
 ---
 
@@ -416,8 +452,12 @@ Or by hand, copy `.env.example` to `.env`:
 OPENROUTER_API_KEY=sk-or-...
 OPENAI_API_KEY=sk-...
 GROQ_API_KEY=gsk_...
+GOOGLE_API_KEY=AIza...
+ANTHROPIC_API_KEY=sk-ant-...
 DISCORD_TOKEN=...
 ```
+
+Local models need no key at all — see [above](#she-runs-on-your-machine-too).
 
 Then review `config.json` for your OBS source names, audio device, TTS voice and
 which skills are enabled.
@@ -436,13 +476,13 @@ make test          # uv run pytest -q
 make lint          # uv run ruff check src tests
 ```
 
-1904 tests, and they run without network access or API keys: every model
+1491 tests, and they run without network access or API keys: every model
 client, surface and transport is faked. CI runs exactly `make test` and `make lint`.
 
 > [!TIP]
 > **Something broken?** If she stops answering, you lose audio, or the avatar
 > breaks, run `uv run bea --doctor` (or `make doctor`) — or open **Maintenance** in the dashboard
-> and press the button. Thirteen checks in the order the pieces depend on each
+> and press the button. Fifteen checks in the order the pieces depend on each
 > other, stopping at the first thing that would stop her, each failure carrying
 > the exact command that fixes it.
 
@@ -456,10 +496,10 @@ The plugin API is a base class and a registry.
 
 | What | How |
 |---|---|
-| **A new LLM provider** | Extend `OpenAICompatibleClient`, add it to `_PROVIDERS` and `build_client()` |
+| **A new LLM provider** | One row in `src/modules/llm/providers.py` if it speaks Responses, Chat Completions or Anthropic Messages |
 | **A new TTS engine** | Implement `TTSInterface`, add the branch and the CLI choice in `src/cli.py` |
 | **A new skill** | Extend `Skill`, register it in `AIVtuberBrain._build_consciousness()` |
-| **A new text platform** | Extend `PlatformSkill`, and the roster, person cards, attention gate and scoped conversations come for free |
+| **A new text platform** | Extend `PlatformSkill`, and the roster, person cards and attention priorities come for free |
 
 **[The Skill API →](docs/skills/overview.md)** · **[Contributing →](docs/contributing.md)**
 
