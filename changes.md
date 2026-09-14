@@ -21,6 +21,144 @@
 - Keep this file private; it records internal decisions and reminders as well
   as user-facing implementation notes.
 
+## AI handoff: read this before changing the repository
+
+This section is intentionally explicit so another AI assistant can continue
+the work if this conversation is unavailable. Treat the rest of this file as
+the source of truth for decisions already made, not as a suggestion to
+re-implement completed work.
+
+### User's goals
+
+- The user wants a customized parallel version of the official ProjectBEA
+  repository, not a temporary experiment and not an automatic contribution
+  workflow.
+- `clean-projectBEA` is where all personal changes are developed, tested,
+  documented, and distributed.
+- The customized `main` branch must contain the official upstream history plus
+  every completed and tested personal change, so people can download one
+  complete version from `main`.
+- The repository should stay reasonably current with the official project.
+  Synchronize upstream deliberately while preserving custom behavior and
+  documenting conflicts or decisions.
+- The user may later choose individual changes to propose to the official
+  ProjectBEA repository. Preparing a branch for that purpose is allowed;
+  opening or submitting a pull request is never automatic.
+- The user wants the repository history and this private log to preserve why
+  decisions were made, how changes were implemented, and what was verified.
+
+### Repository roles
+
+- `upstream` (`https://github.com/emqnuele/projectBEA.git`) is the official
+  ProjectBEA repository. Do not push personal work there.
+- `origin` (`https://github.com/webglossdev/projectBEA.git`) is the user's
+  customized GitHub repository.
+- Local and remote `main` are the complete customized distribution branches.
+- `feat/voice-messages-stt` is the published feature branch for the Telegram
+  and Discord voice-message implementation. It is available at
+  `origin/feat/voice-messages-stt` for a possible future upstream pull
+  request, but no pull request has been opened.
+- The top-level workspace also contains an older `projectBEA` directory and a
+  separate root-level `changes.md`. Do not accidentally apply new work to
+  that copy when the task concerns the customized repository. The authoritative
+  changelog for this repository is `clean-projectBEA/changes.md`.
+
+### Required workflow for every future code change
+
+1. Start in `clean-projectBEA` and inspect `git status`, current branch,
+   remotes, and recent history. Preserve unrelated user changes.
+2. Fetch upstream before synchronization or new work:
+   `git fetch upstream`.
+3. Update the customized `main` deliberately by merging
+   `upstream/main` when appropriate. Resolve conflicts in favor of the
+   intended combined behavior; never discard custom changes merely to make
+   the graph linear.
+4. Create a dedicated branch from the current `main` before editing. Use a
+   descriptive name such as `feat/...`, `fix/...`, `docs/...`, or
+   `chore/...`.
+5. Investigate existing patterns and tests before adding code. Make precise
+   changes, preserve behavior-safe defaults, and avoid unrelated cleanup.
+6. Add or update focused regression tests and directly related documentation.
+   Update this file with the implementation, decisions, risks, and results.
+7. Run the smallest relevant existing checks, then broader checks when the
+   change affects shared behavior. At minimum, inspect the diff and run
+   applicable Ruff, Pyright, Python, frontend, or bot checks already defined
+   by the repository.
+8. Commit the tested branch with a descriptive message and the required
+   Copilot co-author trailer:
+   `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`.
+9. Merge the completed branch into local `main` with a merge commit, then
+   push `main` to `origin`. Do not leave completed work only on a feature
+   branch.
+10. If the user asks to preserve a branch for a possible upstream contribution,
+    push that feature branch to `origin` too. Do not create a pull request
+    unless the user explicitly asks for one.
+11. Verify the final `main` ancestry, remote refs, clean working tree, and
+    published commit. Record any failed or environment-dependent check rather
+    than hiding it.
+
+### Required behavior when continuing this work
+
+- Do not claim a feature is complete based only on a plausible code review;
+  verify the actual route, message path, tests, and published branch.
+- Do not reset, force-delete, rebase away, or overwrite user work. Never use
+  destructive commands such as `git reset --hard` or `git checkout --` unless
+  the user explicitly authorizes that exact action.
+- Do not commit secrets, API keys, bot tokens, private URLs, local model
+  credentials, generated artifacts, or machine-specific files.
+- Do not weaken timing benchmarks or skip failing tests just to obtain a green
+  result. Distinguish code failures from resource- or machine-dependent
+  failures and document both.
+- Do not add dependencies, tooling, or tests outside the repository's
+  established ecosystem unless the user explicitly requests it or a real
+  missing-dependency failure requires it.
+- Surface errors explicitly. Avoid broad exception handling, silent fallbacks,
+  and success-shaped responses for invalid input.
+- Keep `changes.md` private. It is a continuity and decision log, not public
+  release documentation.
+
+### Completed implementation summary
+
+- Configurable LLM provider support was expanded with Google AI Studio,
+  generic OpenAI-compatible, local/Ollama/LM Studio, Claude, and generic
+  Anthropic-compatible providers, including aliases, model pools, optional
+  local/proxy keys, setup/CLI/doctor/configuration support, web settings,
+  documentation, and tests.
+- Full settings saves were fixed so an unchanged `persona` value echoed from
+  `GET /config` is accepted while actual persona edits remain owned by the
+  dedicated persona endpoint. Frontend payload cleanup, regression tests, and
+  a frontend rebuild were included.
+- Repository hygiene was added for local/generated files and secret handling.
+- Discord audio attachments in text channels now pass through the bot,
+  `POST /discord/voice-message`, the shared STT backend, and the normal scoped
+  Discord conversation path.
+- Telegram voice notes now count as explicit conversation turns in groups and
+  use the shared STT backend.
+- Groq Whisper (`whisper-large-v3-turbo`) is the default hosted STT provider;
+  local `faster_whisper` remains available for offline/private transcription.
+- Ordinary Discord text messages still require a mention, reply, or DM;
+  audio attachments are intentional turns without that requirement.
+- Voice transcription failures leave a visible voice-message perception
+  instead of silently dropping the user's message.
+
+### Current known state and next decisions
+
+- Voice implementation commit: `91f8ce8`.
+- Voice implementation branch: `feat/voice-messages-stt`, published to
+  `origin/feat/voice-messages-stt`.
+- CI recovery commit: `f37e7e7`; merged into `main` as `3bdfcda`.
+- Complete changelog commit: `f534071`; merged into `main` as `a093d43`.
+- Voice branch publication record commit: `1a937e7`; merged into `main` as
+  `cc2f358`.
+- The last verified local full suite passed with `1989 passed, 3 skipped`;
+  Ruff and Pyright passed. A separate `BEA_PERF=off` run had one
+  machine-sensitive avatar timing failure and must not be misreported as a
+  voice-message regression.
+- Before more feature work, check whether `upstream/main` has advanced,
+  synchronize if needed, and record the resulting ahead/behind state here.
+- Future upstream pull-request candidates should be reviewed individually;
+  the voice branch is the first explicitly preserved candidate.
+
 ## 2026-09-14 — Voice messages and speech-to-text
 
 ### Added
