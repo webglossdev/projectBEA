@@ -328,9 +328,8 @@ For local transcription:
   `.gitignore`.
 - The custom implementation and private `changes.md` were preserved,
   including the Discord/Telegram voice-message feature and provider changes.
-- The synchronization branch is ready to merge into local `main`; after that,
-  publish `main` to `origin` and verify that it is 0 commits behind
-  `upstream/main`.
+- The synchronization branch was merged into local `main`, published to
+  `origin/main`, and verified to be 0 commits behind `upstream/main`.
 
 ## Complete repository history covered by this log
 
