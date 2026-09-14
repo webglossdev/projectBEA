@@ -314,6 +314,24 @@ For local transcription:
 - The corrected customized `main` branch was pushed to `origin`.
 - No pull request was created for the official ProjectBEA repository.
 
+## 2026-09-14 — Upstream synchronization after accepted pull request
+
+- Fetched the official `upstream/main` after the user's repository-hygiene
+  pull request was accepted upstream.
+- The official branch was three commits ahead of the customized `main`:
+  - `a75e29f` — repository hygiene changes;
+  - `3b80212` — removed the personal `changes.md` ignore rule;
+  - `52d9693` — official merge of pull request #21.
+- Merged `upstream/main` into `chore/sync-upstream-2026-09-14` and verified
+  that the merge was clean.
+- The only resulting file change was the upstream addition of `*.pyc` to
+  `.gitignore`.
+- The custom implementation and private `changes.md` were preserved,
+  including the Discord/Telegram voice-message feature and provider changes.
+- The synchronization branch is ready to merge into local `main`; after that,
+  publish `main` to `origin` and verify that it is 0 commits behind
+  `upstream/main`.
+
 ## Complete repository history covered by this log
 
 The following entries summarize the earlier changes that were carried into
