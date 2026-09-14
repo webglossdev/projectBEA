@@ -70,7 +70,7 @@ def build_client(provider: str, model: str, config,
         raise LLMConfigError(f"Unknown LLM provider: {provider!r}. Valid: {list(_PROVIDERS)}")
 
     key_field, _ = _PROVIDERS[provider]
-    api_key = getattr(config, key_field, None)
+    api_key: str = getattr(config, key_field, None) or ""
     if not api_key and provider not in OPTIONAL_KEY_PROVIDERS:
         raise LLMConfigError(f"{key_field} is missing (set it via env, config.json, or CLI).")
 

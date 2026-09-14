@@ -130,3 +130,10 @@ For local transcription:
   complete version distributed from this repository.
 - On 2026-09-14, after fetching upstream, the repository was 0 commits behind
   and 5 commits ahead of `upstream/main`; no upstream merge was necessary.
+
+## 2026-09-14 — CI route contract
+
+- GitHub Actions exposed a stale endpoint allowlist in
+  `tests/test_web_routing.py` after `/discord/voice-message` was added.
+- Updated the route contract test so Linux, macOS, Windows, and
+  `BEA_PERF=off` CI jobs validate the complete API again.

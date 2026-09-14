@@ -17,7 +17,7 @@ library already present in the environment.
 import asyncio
 import json
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import requests
 
@@ -250,6 +250,7 @@ class AnthropicCompatibleClient(LLMClient, LLMInterface):
     ) -> AssistantMessage:
         body = self._build_body(messages, tools)
         response = await asyncio.to_thread(self._call_api, body)
+        response = cast(Dict[str, Any], response)
         return _anthropic_response_to_assistant(response, self.model_name)
 
     # --- streaming ---
@@ -267,6 +268,8 @@ class AnthropicCompatibleClient(LLMClient, LLMInterface):
             try:
                 resp = self._call_api(body, stream=True)
                 for line in resp.iter_lines(decode_unicode=True):
+                    if isinstance(line, bytes):
+                        line = line.decode("utf-8")
                     if not line or not line.startswith("data: "):
                         continue
                     data = line[6:]
@@ -330,7 +333,9 @@ class AnthropicCompatibleClient(LLMClient, LLMInterface):
                                 if pending:
                                     call["sent"] = len(call["arguments"])
                                     try:
-                                        on_tool_delta(index, call["name"], pending)
+                                        callback = on_tool_delta
+                                        if callback is not None:
+                                            callback(index, call["name"], pending)
                                     except Exception as e:
                                         logger.error(f"Could not hand over the line: {e}")
                                         on_tool_delta = None
@@ -392,7 +397,7 @@ class AnthropicCompatibleClient(LLMClient, LLMInterface):
         history: Optional[list] = None,
     ) -> Tuple[str, str, dict]:
         messages = self._build_messages(user_input, system_prompt, history)
-        response = self._create(messages, json_mode=True)
+        response = cast(Dict[str, Any], self._create(messages, json_mode=True))
         text = ""
         for block in response.get("content", []):
             if block.get("type") == "text":
@@ -415,7 +420,7 @@ class AnthropicCompatibleClient(LLMClient, LLMInterface):
         history: Optional[list] = None,
     ) -> Union[Dict, list]:
         messages = self._build_messages(user_input, system_prompt, history)
-        response = self._create(messages, json_mode=True)
+        response = cast(Dict[str, Any], self._create(messages, json_mode=True))
         text = ""
         for block in response.get("content", []):
             if block.get("type") == "text":
