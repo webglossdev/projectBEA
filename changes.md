@@ -117,6 +117,103 @@ re-implement completed work.
 - Keep `changes.md` private. It is a continuity and decision log, not public
   release documentation.
 
+### Mandatory personal-file and privacy audit
+
+Before every commit, merge, or push, inspect what would actually leave the
+machine. Never assume that `.gitignore` alone is sufficient: ignored files can
+be forced into a commit, personal files can already be tracked, and generated
+or sensitive content can be hidden inside an otherwise normal diff.
+
+#### Files and content that must not be uploaded
+
+Treat all of the following as personal or sensitive unless the user has
+explicitly approved the exact file and destination:
+
+- `.env`, environment variants, API keys, bot tokens, passwords, cookies,
+  private URLs, certificates, SSH keys, local credentials, and access tokens.
+- `config.json` and other machine-specific runtime configuration.
+- Chat history, conversation exports, prompts containing private discussions,
+  agent/session state, transcripts, logs, screenshots, recordings, and
+  debugging dumps.
+- Local databases, memory stores, embeddings, downloaded models, audio/video
+  files, generated clips, caches, backups, temporary files, and benchmark
+  artifacts.
+- `.venv`, `node_modules`, build output, editor state, OS metadata, and files
+  created by another tool or project.
+- The root-level workspace files that are not part of `clean-projectBEA`,
+  including the separate workspace `changes.md`. Do not accidentally stage
+  files from the parent workspace or from the older `projectBEA` copy.
+- `clean-projectBEA/changes.md` itself for any public release or upstream
+  contribution. It contains private goals, decisions, chat continuity, and
+  workflow notes. It may only be pushed to the user's private `origin` when
+  the user has explicitly chosen to keep the private log there; never push it
+  to `upstream` or include it in an upstream pull request.
+
+#### Pre-commit audit
+
+Run these checks from `clean-projectBEA` before staging or committing:
+
+1. Confirm the repository root with `git rev-parse --show-toplevel` and
+   confirm the intended branch with `git branch --show-current`.
+2. Inspect both normal and ignored changes:
+   `git status --short --ignored`.
+3. Review the exact staged file list:
+   `git diff --cached --name-status`.
+4. Review the staged patch and search it for secrets or personal content:
+   `git diff --cached -- .`; inspect suspicious files individually rather than
+   assuming their names are safe.
+5. Check untracked files that would be added by accident:
+   `git ls-files --others --exclude-standard`.
+6. Confirm that no `.env*` containing secrets, runtime config, chat/history
+   file, local data, generated output, parent-workspace file, or
+   `changes.md` intended for a public destination is staged.
+7. Search staged text for credential-shaped values such as
+   common credential-assignment markers, private URLs, bearer tokens,
+   and long opaque key strings. Do not print suspected secret values in logs
+   or tool output.
+8. If a personal file is found, stop before committing. Remove it from the
+   index without deleting the user's local copy when appropriate, ask the user
+   if its destination is ambiguous, and document the decision here.
+
+#### Commit and push rules
+
+- Stage files by explicit path, never with a broad `git add .` or
+  `git add -A` when personal files may exist.
+- A commit must contain only the requested implementation, its focused tests,
+  directly related documentation, and the necessary private changelog update.
+- Review `git diff --cached --stat`, `git diff --cached --name-only`, and the
+  full staged diff immediately before committing.
+- Use descriptive commits with the required Copilot co-author trailer. Never
+  commit a chat transcript, hidden session state, credentials, or unrelated
+  local changes.
+- Before pushing, verify the destination with `git remote -v`. Push personal
+  work only to `origin`; never push to `upstream`.
+- Verify the branch name and remote ref explicitly. Do not push a personal
+  feature branch or private documentation branch to an official repository.
+- Push only after tests, the privacy audit, and the staged-diff review pass.
+- After pushing, verify the remote commit and branch with
+  `git ls-remote --heads origin <branch>` and confirm the working tree is
+  clean.
+- If a secret or personal file was committed in an earlier commit, do not
+  pretend that a later deletion makes the history safe. Stop, notify the
+  user, and obtain explicit instructions before rewriting history or rotating
+  credentials.
+
+#### Destination-specific rule
+
+There are two different publication decisions:
+
+1. **Customized `origin`:** `main` is the user's complete distribution
+   branch. Private `changes.md` may be kept there only because this is the
+   user's repository and the user explicitly requested the continuity log.
+   Confirm that the repository visibility and intended audience are acceptable
+   before pushing it.
+2. **Official `upstream` or an upstream pull request:** send only clean,
+   project-relevant source, tests, public documentation, and safe configuration
+   examples. Remove or exclude `changes.md`, chat history, private workflow
+   notes, and every other personal file. Review the exact PR file list before
+   submitting anything.
+
 ### Completed implementation summary
 
 - Configurable LLM provider support was expanded with Google AI Studio,
