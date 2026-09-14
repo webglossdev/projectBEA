@@ -137,3 +137,115 @@ For local transcription:
   `tests/test_web_routing.py` after `/discord/voice-message` was added.
 - Updated the route contract test so Linux, macOS, Windows, and
   `BEA_PERF=off` CI jobs validate the complete API again.
+
+## 2026-09-14 — CI recovery and verification
+
+### Failure analysis
+
+- The first CI run for the synchronized `main` branch failed because
+  `tests/test_web_routing.py::test_every_endpoint_is_registered` still
+  expected the pre-voice-message route set.
+- The same missing `/discord/voice-message` entry caused the platform test
+  jobs and the `BEA_PERF=off` job to fail. The Discord bot tests and docs-site
+  workflow were independent of this failure.
+- The first local Pyright run also reported ten type errors in the
+  Anthropic-compatible client and provider factory. These were fixed without
+  changing runtime behavior:
+  - narrowed API responses to the dictionaries consumed by the client;
+  - decoded byte SSE lines before string operations;
+  - guarded the optional streaming callback;
+  - normalized an absent provider key to an explicit empty string before
+    provider construction.
+
+### Verification
+
+- `uv run --group dev ruff check src tests`: passed.
+- `uvx pyright`: passed with 0 errors, warnings, or informations.
+- Full Python suite: `1989 passed, 3 skipped`.
+- Focused routing, voice API, and avatar tests: `29 passed`.
+- `git diff --check`: passed.
+- A local `BEA_PERF=off` run completed all tests except the existing
+  machine-sensitive avatar envelope benchmark
+  (`364.3 ms`, threshold `25.0 ms`). The benchmark was not weakened or
+  changed to hide an environment-dependent timing result.
+
+### Commits and publication
+
+- The CI fix was developed on `fix/ci-voice-route`, committed as `f37e7e7`,
+  and merged into `main` as `3bdfcda`.
+- The corrected customized `main` branch was pushed to `origin`.
+- No pull request was created for the official ProjectBEA repository.
+
+## Complete repository history covered by this log
+
+The following entries summarize the earlier changes that were carried into
+`clean-projectBEA` before the voice-message work:
+
+### Configurable LLM providers
+
+- Added configurable provider/model pools and failover-safe provider
+  selection, while preserving the existing provider as the fallback path.
+- Added Google AI Studio, generic OpenAI-compatible, local/Ollama/LM Studio,
+  Claude, and generic Anthropic-compatible provider support with aliases.
+- Added the associated configuration, secret handling, setup/CLI, doctor,
+  model registry, web settings, documentation, and provider tests.
+- Kept local and compatible proxy providers usable without a remote API key.
+
+### Settings save fix
+
+- Fixed full settings saves so the `persona` object returned by `GET /config`
+  can be echoed back unchanged without triggering the guarded-field error.
+- Kept actual persona changes rejected through `POST /config`; persona edits
+  continue to use the dedicated persona endpoint.
+- Removed `persona` from the frontend's generic config-save payload.
+- Added backend and settings API regression coverage and rebuilt the frontend
+  assets.
+
+### Repository hygiene
+
+- Added repository hygiene rules for local artifacts and generated files.
+- Kept secrets, tokens, local credentials, private URLs, and generated
+  machine-specific files out of version control.
+
+## Branch and synchronization record
+
+- `feat/voice-messages-stt` contained the voice implementation and was
+  committed as `91f8ce8`.
+- That work was merged into `main` as `43908a0`.
+- `chore/track-upstream-main` documented and configured upstream tracking;
+  its documentation commit was `86b8b31`, merged into `main` as `a17a823`.
+- `fix/ci-voice-route` contained the CI recovery and was merged into `main` as
+  `3bdfcda`.
+- The official repository is the `upstream` remote:
+  `https://github.com/emqnuele/projectBEA.git`.
+- The personal GitHub repository is the `origin` remote:
+  `https://github.com/webglossdev/projectBEA.git`.
+- `main` is the complete distribution branch: official upstream history plus
+  all tested personal customizations.
+- The intended workflow for every future change is:
+  1. fetch and inspect `upstream/main`;
+  2. create a dedicated branch from the current `main`;
+  3. implement and test the change on that branch;
+  4. commit the branch;
+  5. merge the tested branch into local `main`;
+  6. push `main` to `origin`;
+  7. decide separately whether to propose an upstream pull request.
+- Never create an upstream pull request automatically.
+- When the GitHub comparison showed `origin/main` as 9 commits ahead and
+  14 commits behind, the cause was a stale published `origin/main`, not a
+  missing upstream merge. After fetching and verifying history, the
+  customized local `main` was published with `--force-with-lease`, resulting
+  in 7 commits ahead and 0 commits behind `upstream/main`.
+- This repository's `main` tracking `upstream/main` is for synchronization
+  visibility; it does not remove or hide our custom commits.
+
+## Standing reminders
+
+- `changes.md` is an internal engineering record and must remain private.
+- Do not make this file public, publish it as the upstream changelog, or
+  include it in public release material without removing private workflow
+  notes, local decisions, and reminders.
+- Update this file for every implementation, decision, synchronization,
+  verification result, and workflow exception.
+- Before claiming a change is complete, verify both the code and the
+  published `main` branch.
