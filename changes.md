@@ -211,6 +211,11 @@ The following entries summarize the earlier changes that were carried into
 
 - `feat/voice-messages-stt` contained the voice implementation and was
   committed as `91f8ce8`.
+- The voice feature branch was published to `origin` as
+  `origin/feat/voice-messages-stt` on 2026-09-14 so it can be reviewed and,
+  if desired later, used as the starting point for an upstream pull request.
+- The feature commit is already an ancestor of `main`; the implementation is
+  therefore included in the complete customized distribution branch.
 - That work was merged into `main` as `43908a0`.
 - `chore/track-upstream-main` documented and configured upstream tracking;
   its documentation commit was `86b8b31`, merged into `main` as `a17a823`.
