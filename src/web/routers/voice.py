@@ -136,6 +136,46 @@ async def discord_chat(request: DiscordChatRequest, brain: AIVtuberBrain = Depen
     return {"status": "perceived"}
 
 
+@router.post("/discord/voice-message")
+async def discord_voice_message(
+    file: UploadFile = File(...),
+    username: str = Form(..., min_length=1),
+    channel_id: str = Form(..., min_length=1),
+    user_id: Optional[str] = Form(default=None),
+    message_id: Optional[str] = Form(default=None),
+    is_dm: bool = Form(default=False),
+    whitelisted: bool = Form(default=True),
+    caption: str = Form(default=""),
+    brain: AIVtuberBrain = Depends(get_brain),
+):
+    """Transcribe a Discord audio attachment and route it like a text message."""
+    temp_dir = Path("temp_discord")
+    temp_dir.mkdir(exist_ok=True)
+    suffix = Path(file.filename or "").suffix[:8] or ".audio"
+    temp_file = temp_dir / f"message_{uuid.uuid4().hex}{suffix}"
+
+    try:
+        with open(temp_file, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        transcript = ""
+        if brain.stt:
+            transcript = (await asyncio.to_thread(brain.stt.transcribe, str(temp_file)) or "").strip()
+        text = f"[voice message] {transcript}" if transcript else "[voice message]"
+        if caption.strip():
+            text = f"{text} — {caption.strip()}"
+        brain.perceive_discord_text(
+            text, username, channel_id, message_id=message_id, user_id=user_id,
+            is_dm=is_dm, whitelisted=whitelisted,
+        )
+        return {"status": "perceived", "transcript": transcript}
+    except Exception as e:
+        logger.error(f"Discord voice message error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not transcribe that.") from e
+    finally:
+        if temp_file.exists():
+            os.remove(temp_file)
+
+
 @router.post("/discord/audio")
 async def discord_audio_interaction(
     background_tasks: BackgroundTasks,

@@ -174,6 +174,9 @@ class TelegramSkill(PlatformSkill):
                 reply_to_user_id=reply_user_id,
                 trigger_words=self._trigger_words(),
             )
+            # Sending a voice note is itself an explicit turn, including in a
+            # group where the transcription may not contain her name.
+            called = called or kind == "voice"
 
             self.perceive_text(
                 text,

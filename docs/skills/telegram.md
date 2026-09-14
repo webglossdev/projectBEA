@@ -7,8 +7,9 @@
 ## What it does
 
 Bea reads and answers Telegram — private chats and groups — as one more place
-where she has conversations. It runs **in-process**: Telegram is text only, so
-unlike Discord there is no second runtime to babysit.
+where she has conversations. It runs **in-process**: Telegram voice notes are
+downloaded, transcribed by the configured Groq or local Whisper backend, and
+then enter the same conversation path as text.
 
 ```
 src/core/skills/telegram/
@@ -46,6 +47,7 @@ telegram update
           ├─ Author(platform="telegram", native_id=<user id>)
           ├─ is_dm / mentions_self / reply_to_self flags
           └─ bus.put(Perception(CHAT, conversation_key="telegram:<chat_id>"))
+                  ├─ voice note → STT → transcribed CHAT perception
                   └─ attention gate → scoped conversation turn
 ```
 
@@ -74,7 +76,8 @@ between them. Telegram reactions are not used (`supports_reactions = False`).
   "enabled": false,
   "token": "",
   "owner_id": "",
-  "allowed_chats": []
+  "allowed_chats": [],
+  "transcribe_voice": true
 }
 ```
 
@@ -83,6 +86,7 @@ between them. Telegram reactions are not used (`supports_reactions = False`).
 | `token` | Bot token. Lives in `.env` as `TELEGRAM_TOKEN`; typing it in the dashboard writes it there, never into `config.json` |
 | `owner_id` | Your Telegram user id; messages from it count as the owner, which bypasses cooldown and quiet hours |
 | `allowed_chats` | Chat ids Bea may read. **Empty means every chat she is added to** |
+| `transcribe_voice` | Transcribe Telegram voice notes before depositing them; defaults to `true` |
 
 Trigger words come from `attention.trigger_words`, not from this block — they
 are the same names everywhere.

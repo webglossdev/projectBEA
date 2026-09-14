@@ -94,6 +94,26 @@ def test_a_chat_message_becomes_a_perception(client):
     assert stub.perceived == [("ema", "ciao")]
 
 
+def test_a_discord_voice_message_is_transcribed_and_becomes_a_perception(client):
+    api, stub = client
+    stub.stt = SimpleNamespace(transcribe=lambda path: "hello from audio")
+
+    answer = api.post(
+        "/discord/voice-message",
+        files=upload(),
+        data={
+            "username": "ema",
+            "channel_id": "channel-1",
+            "user_id": "user-1",
+            "message_id": "message-1",
+        },
+    )
+
+    assert answer.status_code == 200
+    assert answer.json()["transcript"] == "hello from audio"
+    assert stub.perceived == [("ema", "[voice message] hello from audio")]
+
+
 def test_an_empty_message_is_refused_before_it_reaches_her(client):
     api, stub = client
 

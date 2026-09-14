@@ -322,7 +322,7 @@ class BrainConfig:
     timezone: str = ""
 
     # STT
-    stt_provider: str = "openrouter"
+    stt_provider: str = "groq"
     stt_model: str = "whisper-large-v3-turbo"
 
     # local whisper. Only read when stt_provider is "faster_whisper"; the model
