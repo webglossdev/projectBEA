@@ -149,6 +149,15 @@ async def test_a_photo_now_reaches_her(bus):
     assert "guarda" in perceptions[0].content
 
 
+async def test_a_photo_download_is_attached_for_vision_models(bus, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    s = skill(bus)
+    s.app = FakeApp()
+    await s._on_message(_update(incoming(photo=[File("photo-1")])), None)
+    perception = bus.drain_nowait()[0]
+    assert perception.meta["attachment_urls"][0].startswith("data:image/jpeg;base64,")
+
+
 async def test_a_sticker_now_reaches_her(bus):
     s = skill(bus)
     await s._on_message(_update(incoming(sticker=Sticker(emoji="🗿"))), None)
@@ -211,6 +220,11 @@ class FakeBot:
     def __init__(self):
         self.downloaded = []
         self.reactions = []
+        self.edits = []
+        self.deletions = []
+
+    async def send_message(self, **kwargs):
+        return type("Sent", (), {"message_id": 77})()
 
     async def get_file(self, file_id):
         self.downloaded.append(file_id)
@@ -223,6 +237,12 @@ class FakeBot:
 
     async def set_message_reaction(self, **kwargs):
         self.reactions.append(kwargs)
+
+    async def edit_message_text(self, **kwargs):
+        self.edits.append(kwargs)
+
+    async def delete_message(self, **kwargs):
+        self.deletions.append(kwargs)
 
 
 class FakeApp:
@@ -239,6 +259,25 @@ async def test_a_voice_note_is_transcribed(bus, tmp_path, monkeypatch):
     perception = bus.drain_nowait()[0]
     assert "mi sono rotto un dente" in perception.content
     assert s.app.bot.downloaded == ["v1"]
+    assert s.stt.files[0].endswith(".ogg")
+
+
+async def test_telegram_can_edit_and_delete_messages(bus):
+    s = skill(bus)
+    s.app = FakeApp()
+
+    assert await s.edit_text("2", "10", "corretto")
+    assert await s.delete_message("2", "10")
+    assert s.app.bot.edits == [{"chat_id": 2, "message_id": 10, "text": "corretto"}]
+    assert s.app.bot.deletions == [{"chat_id": 2, "message_id": 10}]
+
+
+async def test_telegram_tracks_its_latest_message(bus):
+    s = skill(bus)
+    s.app = FakeApp()
+    assert await s.send_text("2", "hello")
+    assert await s._tool_edit_last_message("2", "edited") == "Edited."
+    assert await s._tool_delete_last_message("2") == "Deleted."
 
 
 async def test_an_untranscribable_voice_note_still_reaches_her(bus, tmp_path, monkeypatch):

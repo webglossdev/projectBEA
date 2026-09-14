@@ -1,6 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const { ChannelType } = require('discord.js');
+const { ChannelType, PermissionsBitField } = require('discord.js');
 const { requireToken, inviteOptions } = require('./guard');
 
 // the command API: brain -> bot. Bea's tools hit these endpoints to act on
@@ -75,6 +75,45 @@ function createServer({ client, voiceManager, token, env = process.env }) {
             if (!channel || !channel.isTextBased()) return fail(res, 400, 'Channel is not text-based');
             const target = await channel.messages.fetch(messageId);
             await target.react(emoji);
+            return ok(res);
+        } catch (e) {
+            return fail(res, 500, e.message);
+        }
+    });
+
+    app.post('/edit', async (req, res) => {
+        const { channelId, messageId, content } = req.body;
+        if (!channelId || !messageId || !content) {
+            return fail(res, 400, 'Missing channelId, messageId or content');
+        }
+        try {
+            const channel = await client.channels.fetch(channelId);
+            if (!channel || !channel.isTextBased()) return fail(res, 400, 'Channel is not text-based');
+            const target = await channel.messages.fetch(messageId);
+            if (target.author?.id !== client.user?.id) {
+                return fail(res, 403, 'Discord bots can only edit their own messages');
+            }
+            await target.edit(content);
+            return ok(res);
+        } catch (e) {
+            return fail(res, 500, e.message);
+        }
+    });
+
+    app.post('/delete', async (req, res) => {
+        const { channelId, messageId } = req.body;
+        if (!channelId || !messageId) return fail(res, 400, 'Missing channelId or messageId');
+        try {
+            const channel = await client.channels.fetch(channelId);
+            if (!channel || !channel.isTextBased()) return fail(res, 400, 'Channel is not text-based');
+            const target = await channel.messages.fetch(messageId);
+            const ownMessage = target.author?.id === client.user?.id;
+            const canModerate = !channel.guild
+                || channel.permissionsFor(client.user).has(PermissionsBitField.Flags.ManageMessages);
+            if (!ownMessage && !canModerate) {
+                return fail(res, 403, 'Manage Messages permission is required to delete another member message');
+            }
+            await target.delete();
             return ok(res);
         } catch (e) {
             return fail(res, 500, e.message);

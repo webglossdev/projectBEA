@@ -52,6 +52,7 @@ class VoiceSurface(PlatformSkill):
         super().initialize()
         self.transport = DiscordTransport(self.config)
         self._monitor: Optional[asyncio.Task] = None
+        self._last_sent_ids: Dict[str, str] = {}
         self.voice_channel: Optional[str] = None
         self._alone_since: Optional[float] = None
         self.latency = VoiceLatency(events=getattr(self.context, "event_manager", None))
@@ -233,12 +234,21 @@ class VoiceSurface(PlatformSkill):
 
     async def send_text(self, channel_id: str, text: str,
                         reply_to: Optional[str] = None) -> bool:
+        # Tests and lightweight callers may construct the surface without the
+        # full lifecycle; keep the send path safe in that case too.
+        if not hasattr(self, "_last_sent_ids"):
+            self._last_sent_ids = {}
         if reply_to:
             result = await self.transport.reply_message(channel_id, reply_to, text)
             if result.get("ok"):
+                if result.get("messageId"):
+                    self._last_sent_ids[str(channel_id)] = str(result["messageId"])
                 return True
             # the message may have been deleted: fall back to a plain send
-        return bool((await self.transport.send_message(channel_id, text)).get("ok"))
+        result = await self.transport.send_message(channel_id, text)
+        if result.get("ok") and result.get("messageId"):
+            self._last_sent_ids[str(channel_id)] = str(result["messageId"])
+        return bool(result.get("ok"))
 
     async def send_typing(self, channel_id: str) -> None:
         await self.transport.typing(channel_id)
@@ -342,6 +352,8 @@ class VoiceSurface(PlatformSkill):
             "from here — you'll find yourself in that conversation on its own.\n"
             "- What you CAN do from here is act first: `discord_send_message` to write in "
             "a channel unprompted, `discord_send_dm` to message someone privately, "
+            "`discord_edit_last_message` and `discord_delete_last_message` to manage "
+            "the most recent message you sent, "
             "`discord_list_voice_channels` to see where people are, `discord_join_voice` "
             "to go hang out, `discord_summon` to call someone in.\n"
             + (
@@ -353,7 +365,10 @@ class VoiceSurface(PlatformSkill):
                 if self.voice_channel else ""
             )
             + "- When you write, every LINE becomes a separate message with a typing pause "
-            "in between. Two short lines beat one paragraph."
+            "in between. Two short lines beat one paragraph.\n"
+            "- Discord lets you edit your own messages. Deleting another member's message "
+            "requires Manage Messages in that channel; editing someone else's message is "
+            "not supported by Discord."
         )
 
     # --- tools (brain -> bot) ----------------------------------------------
@@ -404,6 +419,41 @@ class VoiceSurface(PlatformSkill):
                     "emoji": {"type": "string"}},
                  "required": ["channel_id", "message_id", "emoji"]},
                 self._tool_react,
+            ),
+            Tool(
+                "discord_edit_message",
+                "Edit a Discord message by channel id and message id. Discord only allows "
+                "the bot to edit its own messages.",
+                {"type": "object", "properties": {
+                    "channel_id": {"type": "string"}, "message_id": {"type": "string"},
+                    "text": {"type": "string"}},
+                 "required": ["channel_id", "message_id", "text"]},
+                self._tool_edit_message,
+            ),
+            Tool(
+                "discord_delete_message",
+                "Delete a Discord message by channel id and message id. Deleting another "
+                "member's message requires the bot's Manage Messages permission.",
+                {"type": "object", "properties": {
+                    "channel_id": {"type": "string"}, "message_id": {"type": "string"}},
+                 "required": ["channel_id", "message_id"]},
+                self._tool_delete_message,
+            ),
+            Tool(
+                "discord_edit_last_message",
+                "Edit the most recent Discord message Bea sent in a channel.",
+                {"type": "object", "properties": {
+                    "channel_id": {"type": "string"}, "text": {"type": "string"}},
+                 "required": ["channel_id", "text"]},
+                self._tool_edit_last_message,
+            ),
+            Tool(
+                "discord_delete_last_message",
+                "Delete the most recent Discord message Bea sent in a channel.",
+                {"type": "object", "properties": {
+                    "channel_id": {"type": "string"}},
+                 "required": ["channel_id"]},
+                self._tool_delete_last_message,
             ),
             Tool(
                 "discord_send_dm",
@@ -498,6 +548,34 @@ class VoiceSurface(PlatformSkill):
 
     async def _tool_react(self, channel_id: str, message_id: str, emoji: str) -> str:
         return self._fmt(await self.transport.react_message(channel_id, message_id, emoji), "Reacted.")
+
+    async def _tool_edit_message(self, channel_id: str, message_id: str,
+                                 text: str) -> str:
+        return self._fmt(
+            await self.transport.edit_message(channel_id, message_id, text),
+            "Edited.",
+        )
+
+    async def _tool_delete_message(self, channel_id: str, message_id: str) -> str:
+        return self._fmt(
+            await self.transport.delete_message(channel_id, message_id),
+            "Deleted.",
+        )
+
+    async def _tool_edit_last_message(self, channel_id: str, text: str) -> str:
+        message_id = self._last_sent_ids.get(str(channel_id))
+        if not message_id:
+            return "FAILED: no recent Discord message from Bea is known in that channel."
+        return await self._tool_edit_message(channel_id, message_id, text)
+
+    async def _tool_delete_last_message(self, channel_id: str) -> str:
+        message_id = self._last_sent_ids.get(str(channel_id))
+        if not message_id:
+            return "FAILED: no recent Discord message from Bea is known in that channel."
+        result = await self._tool_delete_message(channel_id, message_id)
+        if result == "Deleted.":
+            self._last_sent_ids.pop(str(channel_id), None)
+        return result
 
     async def _tool_send_dm(self, user_id: str, text: str) -> str:
         return self._fmt(await self.transport.send_dm(user_id, text), "DM sent.")

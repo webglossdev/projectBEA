@@ -524,3 +524,74 @@ The following entries summarize the earlier changes that were carried into
   verification result, and workflow exception.
 - Before claiming a change is complete, verify both the code and the
   published `main` branch.
+
+## 2026-09-14 — Platform moderation and media handling
+
+- Started dedicated branch `feat/platform-moderation-media-fixes` from the
+  customized `main`. No unfinished implementation branch or dangling partial
+  commit from the earlier interrupted bot was found in local branches, remote
+  refs, or the recent reflog; implementation was therefore reviewed and
+  completed from the current source.
+- Added Telegram message edit/delete actions and Discord message edit/delete
+  actions to the platform tools and transport APIs.
+- The platform surfaces retain the most recent message id returned by each
+  send, so the model can edit or delete its own latest message without having
+  to guess or retrieve an id. Explicit id-based tools remain available for
+  known messages.
+- Telegram can edit its own messages. Telegram cannot edit another user's
+  message through the Bot API. Telegram deletion of another user's group
+  message requires the bot to be a group administrator with **Delete messages**.
+- Discord can edit its own messages. Discord deletion of another member's
+  message requires **Manage Messages** in the relevant channel. Discord cannot
+  edit another member's message through the API, regardless of permissions.
+- Added explicit permission/API failures instead of pretending that a
+  moderation operation succeeded. Required platform permissions are documented
+  in `docs/skills/telegram.md` and `docs/skills/discord.md`.
+- Fixed Telegram and Discord `.oga` voice-note uploads by using `.ogg` for the
+  temporary STT path. The audio bytes are Ogg/Opus; Groq/OpenAI-compatible
+  transcription validates accepted filename extensions and rejected `.oga`.
+- Telegram photos and image documents are downloaded only for the active
+  request and passed as base64 data URLs to multimodal model requests. Discord
+  image attachments are routed with their CDN URLs. The textual attachment
+  label remains as a fallback, and attachment-only messages are no longer
+  silently ignored.
+- Added OpenAI-compatible multimodal message construction and conversion for
+  Anthropic-compatible providers. Also made an empty provider message safe so a
+  malformed/empty model response cannot raise `'NoneType' object has no
+  attribute 'content'` during a media turn.
+- Added focused regression coverage for Telegram `.ogg` suffixes, Telegram
+  media download and moderation calls, Discord moderation delivery, Discord
+  attachment metadata, and `.oga` normalization in the Discord voice API.
+- This work remains fork-specific until separately reviewed for an optional
+  upstream contribution. No pull request is created automatically.
+
+## 2026-09-14 — Recovery checkpoint: settings save and validation
+
+- The current active branch is `feat/platform-moderation-media-fixes`. The
+  moderation/media implementation is still uncommitted and has not yet been
+  merged into customized `main`, pushed to `origin`, or submitted as a pull
+  request.
+- A full Python test run reached `1997 passed, 3 skipped` and exposed two
+  stale Telegram tool-scope assertions. Those tests were updated to include
+  the new `edit_message` and `delete_message` tools; the complete suite must
+  be rerun before commit.
+- The Discord bot's declared npm dependencies were installed with `npm ci`
+  solely because the existing bot tests could not load missing `ws` and
+  `express` packages. `node_modules` is ignored local state and must never be
+  staged or committed.
+- The reported web settings failure was traced to `/config` rejecting a
+  stale or read-only `persona` snapshot with `persona: not writable here`.
+  `PUT /persona` remains the validated write path for persona changes, while
+  whole-config saves now ignore any `persona` object so unrelated settings
+  changes cannot be blocked by an older dashboard tab or stale client bundle.
+  A regression test was updated to verify that the persona remains unchanged
+  while another config field saves successfully.
+- Validation completed after the recovery: focused Python coverage passed
+  (`102 passed` for config, settings, and Telegram paths); the full Python
+  suite passed (`2002 passed, 3 skipped`); Ruff passed; Pyright reported
+  `0 errors, 0 warnings, 0 informations`; Discord bot tests passed (`56
+  passed`); Discord JavaScript syntax checks and `git diff --check` passed.
+- Remaining work after interruption: perform the final privacy/staging audit,
+  commit with the required Copilot trailer, merge into local `main`, push only
+  customized `main` to `origin` (and optionally publish the feature branch),
+  and verify the final refs. Do not create a PR.

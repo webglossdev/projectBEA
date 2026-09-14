@@ -248,7 +248,20 @@ class ConversationMind:
             header = "[NEW MESSAGES]" if first else \
                 "[MORE ARRIVED WHILE YOU WERE WRITING — answer everything at once]"
             lines = "\n".join(p.render() for p in incoming)
-            messages.append({"role": "user", "content": f"{header}\n{lines}"})
+            image_urls = [
+                url for p in incoming
+                for url in p.meta.get("attachment_urls", [])
+                if isinstance(url, str) and url
+            ]
+            if image_urls:
+                content: Any = [{"type": "text", "text": f"{header}\n{lines}"}]
+                content.extend(
+                    {"type": "image_url", "image_url": {"url": url}}
+                    for url in image_urls
+                )
+            else:
+                content = f"{header}\n{lines}"
+            messages.append({"role": "user", "content": content})
         elif initiative:
             messages.append({"role": "user", "content": frame or INITIATIVE_FRAME})
         return messages

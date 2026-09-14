@@ -22,7 +22,8 @@ from src.core.config import MASK, SECRET_ENV_VARS, BrainConfig, deep_merge
 from src.core.settings_schema import SECTIONS, Setting, coerce
 
 # `PUT /persona` owns this one: it refuses a blank name and a soul the size of
-# a novel, and a second way in would be a way around those
+# a novel. A whole-config payload may still contain this read-only snapshot
+# because older dashboards and stale settings tabs send the object back.
 GUARDED = frozenset({"persona"})
 
 # the provider object is built once at startup, so changing it needs a restart
@@ -187,8 +188,9 @@ def plan_config(config: BrainConfig, payload: Dict[str, Any]) -> Plan:
 
     for key, raw in sorted(payload.items()):
         if key in GUARDED:
-            if raw != getattr(config, key, None):
-                errors[key] = "not writable here"
+            # Persona changes go through PUT /persona. Ignore stale or
+            # read-only snapshots here instead of rejecting unrelated setting
+            # changes made by an older dashboard tab.
             continue
 
         declared_type = declared.get(key)

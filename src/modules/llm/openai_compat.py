@@ -201,7 +201,7 @@ class OpenAICompatibleClient(LLMClient, LLMInterface):
 
         # cheap models leak <think> blocks and special tokens; unfiltered they
         # end up spoken out loud
-        return AssistantMessage(content=clean_model_output(message.content),
+        return AssistantMessage(content=clean_model_output(getattr(message, "content", None) or ""),
                                 tool_calls=tool_calls, usage=usage, model=self.model_name)
 
     # --- the same call, reported as it is written ---------------------------

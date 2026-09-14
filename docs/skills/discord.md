@@ -43,7 +43,8 @@ Both directions are HTTP over localhost.
 │      │                                                   │
 │      └─ DiscordTransport ──► POST localhost:3030/...     │
 │                              (send, reply, react, dm,    │
-│                               typing, summon, voice/*)   │
+│                               typing, edit, delete,      │
+│                               summon, voice/*)            │
 │                                                          │
 │  FastAPI endpoints the bot calls back into:              │
 │      POST /discord/chat        text message              │
@@ -87,6 +88,11 @@ are transcribed by the configured STT backend, and then enter the same scoped
 conversation as text. Voice notes in Telegram follow the equivalent in-process
 path and use the same backend.
 
+Image attachments are routed with their CDN URLs and the attachment name.
+Conversation requests send those URLs as multimodal `image_url` content to
+vision-capable providers while retaining the textual fallback. Attachment-only
+messages are not silently ignored.
+
 **Overheard speech** (`POST /voice/transcript`) is a third path: it deposits a
 perception and returns without waiting. The attention gate decides whether it
 was worth reacting to.
@@ -100,6 +106,10 @@ was worth reacting to.
 | `discord_send_message(channel_id, text)` | write in a channel unprompted |
 | `discord_reply(channel_id, message_id, text)` | reply, quoting the original |
 | `discord_react(channel_id, message_id, emoji)` | react with one emoji |
+| `discord_edit_message(channel_id, message_id, text)` | edit one of Bea's own messages |
+| `discord_delete_message(channel_id, message_id)` | delete Bea's message or another member's message when permitted |
+| `discord_edit_last_message(channel_id, text)` | edit the most recent message Bea sent in the channel |
+| `discord_delete_last_message(channel_id)` | delete the most recent message Bea sent in the channel |
 | `discord_send_dm(user_id, text)` | private message |
 | `discord_list_voice_channels()` | who is in which call right now |
 | `discord_join_voice(channel_id)` | go hang out |
@@ -108,6 +118,9 @@ was worth reacting to.
 
 Every one goes through `DiscordTransport`, which returns `{"ok": bool, ...}` so
 a failure becomes a clean observation Bea can react to rather than an exception.
+Discord only permits the bot to edit its own messages. Deleting another
+member's message requires **Manage Messages** in that channel; deleting its own
+message does not require that moderation permission.
 
 Text written with any of these is delivered by the **humanizer**: one line per
 message, with a typing indicator and a delay proportional to length.
@@ -131,7 +144,8 @@ src/core/skills/voice/bot/
 ```
 
 **Express routes** (`api/server.js`): `GET /health`, `POST /send`,
-`POST /reply`, `POST /typing`, `POST /react`, `POST /dm`, `POST /summon`,
+`POST /reply`, `POST /typing`, `POST /react`, `POST /edit`, `POST /delete`,
+`POST /dm`, `POST /summon`,
 `GET /voice/channels`, `POST /voice/join`, `POST /voice/leave`.
 
 **Voice in:** per-user Opus stream → `prism-media` decoder → PCM → WAV →
@@ -217,6 +231,9 @@ restricted to `ADMIN_ID` and unauthorised calls are silently ignored.
 
 1. Create a bot at [discord.com/developers](https://discord.com/developers/applications).
 2. Enable **Message Content Intent**, **Server Members Intent**, and voice permissions.
+   Grant **Manage Messages** in channels where Bea should delete other members'
+   messages. Editing other members' messages is not possible through Discord's
+   API, regardless of permissions.
 3. Put `DISCORD_TOKEN` in `.env`.
 4. `cd src/core/skills/voice/bot && npm install`
 5. Toggle the skill on in the dashboard.
