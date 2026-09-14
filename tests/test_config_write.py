@@ -69,12 +69,16 @@ def test_a_key_nobody_declared_is_refused(config):
     assert "unknown setting" in rejected(config, {"not_a_setting": 1})
 
 
-def test_the_persona_keeps_its_own_door(config):
-    # `PUT /persona` refuses a blank name and a soul the size of a novel
+def test_a_stale_persona_snapshot_is_ignored_by_whole_config_saves(config):
+    # `PUT /persona` remains the validated persona write path.
     before = dict(config.persona)
 
-    assert "not writable here" in rejected(config, {"persona": {"name": ""}})
+    plan = plan_config(config, {"persona": {"name": ""}, "language": "it"})
+    plan.apply(config)
+
     assert config.persona == before
+    assert config.language == "it"
+    assert "persona" not in plan.changed
 
 
 def test_a_complete_save_with_unchanged_persona_is_allowed(config):

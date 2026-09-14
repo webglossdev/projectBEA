@@ -626,7 +626,8 @@ class AIVtuberBrain:
 
     def perceive_discord_text(self, text: str, username: str, channel_id: str,
                               message_id: Optional[str] = None, user_id: Optional[str] = None,
-                              is_dm: bool = False, whitelisted: bool = True) -> None:
+                              is_dm: bool = False, whitelisted: bool = True,
+                              attachment_urls: Optional[List[str]] = None) -> None:
         """Discord text: deposit a CHAT perception on the bus and return immediately.
         Bea decides on her own whether/how to answer, using the discord tools
         (reply/send_message/react) with the ids carried in the perception. This is
@@ -636,7 +637,8 @@ class AIVtuberBrain:
             surface.perceive_text(
                 text, author=surface.build_author(user_id or username, username),
                 channel_id=channel_id, message_id=message_id, is_dm=is_dm,
-                meta={"whitelisted": whitelisted},
+                meta={"whitelisted": whitelisted,
+                      "attachment_urls": list(attachment_urls or [])},
             )
 
     async def run_loop(self):

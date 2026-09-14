@@ -303,17 +303,16 @@ def test_a_complete_config_save_allows_unchanged_persona(client):
     assert stub.config.language == "it"
 
 
-def test_changing_persona_through_config_is_still_rejected(client):
+def test_a_stale_persona_snapshot_cannot_block_other_config_changes(client):
     api, stub = client
     before = dict(stub.config.persona)
     changed = {**before, "name": f"{before['name']}-changed"}
 
-    res = api.post("/config", json={"config": {"persona": changed}})
+    res = api.post("/config", json={"config": {"persona": changed, "language": "it"}})
 
-    assert res.status_code == 422
-    assert "persona" in res.json()["detail"]
-    assert "not writable here" in res.json()["detail"]
+    assert res.status_code == 200
     assert stub.config.persona == before
+    assert stub.config.language == "it"
 
 
 # --- secrets go to .env, which is where they survive a restart ---------------

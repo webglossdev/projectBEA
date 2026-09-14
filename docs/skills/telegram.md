@@ -13,7 +13,7 @@ then enter the same conversation path as text.
 
 ```
 src/core/skills/telegram/
-├── surface.py    TelegramSkill — lifecycle, senses, one tool
+├── surface.py    TelegramSkill — lifecycle, senses, message tools
 └── handlers.py   pure extraction: is_bot_called, message_text, display_name…
 ```
 
@@ -57,6 +57,11 @@ answers one turn at a time per chat, several chats in parallel.
 
 Replies go out through the humanizer — one line per message, with a typing pause
 between them. Telegram reactions are not used (`supports_reactions = False`).
+Voice notes are saved with an `.ogg` suffix before STT; Telegram normally sends
+Ogg/Opus bytes, and Groq/OpenAI-compatible transcription rejects the common
+`.oga` suffix even when the bytes are valid. Photos are downloaded briefly and
+passed as a data URL to multimodal providers; if a download fails, the textual
+`[photo]` label is retained instead of dropping the message.
 
 ---
 
@@ -65,7 +70,16 @@ between them. Telegram reactions are not used (`supports_reactions = False`).
 | Tool | Where |
 |---|---|
 | `telegram_send_message(chat_id, text)` | the live loop — writing somewhere unprompted |
+| `telegram_edit_message(chat_id, message_id, text)` | edit one of Bea's own messages |
+| `telegram_delete_message(chat_id, message_id)` | delete Bea's message or, with Telegram group administrator delete permission, another user's message |
+| `telegram_edit_last_message(chat_id, text)` | edit the most recent message Bea sent in the chat |
+| `telegram_delete_last_message(chat_id)` | delete the most recent message Bea sent in the chat |
 | `reply`, `send_message`, `say_nothing` | a scoped turn, with the ids already bound |
+
+Telegram's Bot API does not allow a bot to edit another user's message. Deleting
+another member's message requires the bot to be an administrator with **Delete
+messages** enabled in the group. Sending and editing Bea's own messages still
+requires the relevant chat permissions and an unexpired message.
 
 ---
 
@@ -100,3 +114,5 @@ are the same names everywhere.
 3. For groups, disable BotFather's privacy mode if you want her to read
    everything rather than only messages that mention her.
 4. Toggle the skill on in the dashboard.
+5. In groups where Bea should moderate, promote the bot to an administrator and
+   grant **Delete messages**. Do not grant more rights than needed.

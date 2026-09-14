@@ -18,10 +18,12 @@ class FakeTransport:
         self.replies = []
         self.typing_calls = []
         self.reply_ok = reply_ok
+        self.edits = []
+        self.deletions = []
 
     async def send_message(self, channel_id, content):
         self.sent.append((channel_id, content))
-        return {"ok": True}
+        return {"ok": True, "messageId": "sent-1"}
 
     async def reply_message(self, channel_id, message_id, content):
         self.replies.append((channel_id, message_id, content))
@@ -29,6 +31,14 @@ class FakeTransport:
 
     async def typing(self, channel_id):
         self.typing_calls.append(channel_id)
+        return {"ok": True}
+
+    async def edit_message(self, channel_id, message_id, content):
+        self.edits.append((channel_id, message_id, content))
+        return {"ok": True}
+
+    async def delete_message(self, channel_id, message_id):
+        self.deletions.append((channel_id, message_id))
         return {"ok": True}
 
 
@@ -88,3 +98,18 @@ async def test_emit_text_without_a_channel_does_nothing():
     s = surface()
     assert await s.emit_text("ciao", meta={}) == []
     assert s.transport.sent == []
+
+
+async def test_discord_can_edit_and_delete_messages():
+    s = surface()
+    assert await s._tool_edit_message("123", "m1", "corretto") == "Edited."
+    assert await s._tool_delete_message("123", "m1") == "Deleted."
+    assert s.transport.edits == [("123", "m1", "corretto")]
+    assert s.transport.deletions == [("123", "m1")]
+
+
+async def test_discord_tracks_its_latest_message():
+    s = surface()
+    assert await s.send_text("123", "hello")
+    assert await s._tool_edit_last_message("123", "edited") == "Edited."
+    assert await s._tool_delete_last_message("123") == "Deleted."

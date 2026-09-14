@@ -119,7 +119,34 @@ def _openai_messages_to_anthropic(
             continue
 
         # user or anything else
-        converted.append({"role": "user", "content": content})
+        if isinstance(content, list):
+            blocks: List[Dict[str, Any]] = []
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "text":
+                    blocks.append({"type": "text", "text": item.get("text", "")})
+                elif item.get("type") == "image_url":
+                    url = (item.get("image_url") or {}).get("url", "")
+                    if url.startswith("data:"):
+                        header, encoded = url.split(",", 1)
+                        media_type = header[5:].split(";", 1)[0] or "image/jpeg"
+                        blocks.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": encoded,
+                            },
+                        })
+                    elif url:
+                        blocks.append({
+                            "type": "image",
+                            "source": {"type": "url", "url": url},
+                        })
+            converted.append({"role": "user", "content": blocks or content})
+        else:
+            converted.append({"role": "user", "content": content})
 
     # coalesce consecutive same-role turns
     coalesced: List[Dict[str, Any]] = []

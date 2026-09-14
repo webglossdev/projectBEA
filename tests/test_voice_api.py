@@ -35,7 +35,7 @@ def client(tmp_path, monkeypatch):
             raise RuntimeError(f"/Users/someone/secret/path/{username}.wav is unreadable")
 
         def perceive_discord_text(self, message, username, channel_id, **kw):
-            self.perceived.append((username, message))
+            self.perceived.append((username, message, kw))
 
     stub = BrainStub()
     previous = deps.brain_instance
@@ -91,7 +91,9 @@ def test_a_chat_message_becomes_a_perception(client):
 
     assert answer.status_code == 200
     assert answer.json() == {"status": "perceived"}
-    assert stub.perceived == [("ema", "ciao")]
+    assert stub.perceived == [("ema", "ciao", {"message_id": None, "user_id": None,
+                                                "is_dm": False, "whitelisted": True,
+                                                "attachment_urls": []})]
 
 
 def test_a_discord_voice_message_is_transcribed_and_becomes_a_perception(client):
@@ -111,7 +113,43 @@ def test_a_discord_voice_message_is_transcribed_and_becomes_a_perception(client)
 
     assert answer.status_code == 200
     assert answer.json()["transcript"] == "hello from audio"
-    assert stub.perceived == [("ema", "[voice message] hello from audio")]
+    assert stub.perceived[0][0:2] == ("ema", "[voice message] hello from audio")
+
+
+def test_a_discord_image_url_reaches_the_perception(client):
+    api, stub = client
+
+    answer = api.post(
+        "/discord/chat",
+        json={
+            "username": "ema",
+            "message": "[attachment: photo.png]",
+            "channelId": "channel-1",
+            "attachment_urls": ["https://cdn.discordapp.com/photo.png"],
+        },
+    )
+
+    assert answer.status_code == 200
+    assert stub.perceived[0][2]["attachment_urls"] == [
+        "https://cdn.discordapp.com/photo.png"
+    ]
+
+
+def test_a_discord_oga_voice_message_uses_a_supported_transcription_suffix(client):
+    api, stub = client
+    paths = []
+    stub.stt = SimpleNamespace(
+        transcribe=lambda path: (paths.append(path) or "hello from oga")
+    )
+
+    answer = api.post(
+        "/discord/voice-message",
+        files={"file": ("clip.oga", io.BytesIO(b"OggS"), "audio/ogg")},
+        data={"username": "ema", "channel_id": "channel-1"},
+    )
+
+    assert answer.status_code == 200
+    assert paths[0].endswith(".ogg")
 
 
 def test_an_empty_message_is_refused_before_it_reaches_her(client):

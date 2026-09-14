@@ -90,7 +90,8 @@ key, and the whole payload is refused: nothing is half-applied.
 Dict-valued fields (`skills`, `stage`, `avatar_map`, …) are merged rather than
 replaced, so a save carrying one knob never wipes the ones it said nothing
 about. `persona` is not writable here — it has its own endpoint, with guards of
-its own.
+its own. A persona object included in a whole-config snapshot is ignored,
+including when it is stale, so it cannot block unrelated settings saves.
 
 Secrets are written to `.env`, never to config.json, and
 `secrets_written_to_env` names the variables that were written. Posting the

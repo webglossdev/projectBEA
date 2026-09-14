@@ -76,10 +76,22 @@ async function handleChat(client, message) {
         const contentType = (attachment.contentType || '').toLowerCase();
         return contentType.startsWith('audio/') || /\.(oga|ogg|opus|mp3|wav|m4a|webm)$/i.test(attachment.name || '');
     });
+    const attachments = [...message.attachments.values()];
+    const attachmentUrls = attachments
+        .filter((attachment) => {
+            const contentType = (attachment.contentType || '').toLowerCase();
+            return contentType.startsWith('image/') ||
+                /\.(png|jpe?g|gif|webp|bmp)$/i.test(attachment.name || '');
+        })
+        .map((attachment) => attachment.url);
+    const attachmentText = attachments
+        .filter((attachment) => attachment !== audio)
+        .map((attachment) => `[attachment: ${attachment.name || 'file'}]`)
+        .join(' ');
     // An audio attachment is an intentional message, like a DM or a reply.
     // Text in a busy channel still requires an explicit mention/reply.
-    if (!(isMentioned || isReplyToBot || isDM || audio)) return;
-    if (!cleanContent && !audio) return;
+    if (!(isMentioned || isReplyToBot || isDM || attachments.length)) return;
+    if (!cleanContent && !audio && !attachmentText) return;
 
     const displayName = message.member
         ? message.member.displayName
@@ -110,12 +122,13 @@ async function handleChat(client, message) {
             // and calls discord_reply / discord_send_message herself.
             await axios.post(`${config.BRAIN_API_URL}/discord/chat`, {
                 username: displayName,
-                message: cleanContent,
+                message: [attachmentText, cleanContent].filter(Boolean).join(' ').trim(),
                 channelId: message.channel.id,
                 userId: userId,
                 messageId: message.id,
                 isDm: isDM,
                 whitelisted,
+                attachment_urls: attachmentUrls,
             });
         }
     } catch (error) {

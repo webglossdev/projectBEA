@@ -9,9 +9,10 @@ what was actually said.
 """
 
 import asyncio
+import base64
 import os
 import tempfile
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from src.core.perception.types import Author
 from src.core.persona import persona_of
@@ -42,6 +43,7 @@ class TelegramSkill(PlatformSkill):
         self.app: Optional[Any] = None
         self._task: Optional[asyncio.Task] = None
         self._me: Any = None
+        self._last_sent_ids: Dict[str, str] = {}
         # set by the brain; a voice note without it is just "[voice note]"
         self.stt = getattr(self.context, "stt", None)
 
@@ -187,7 +189,8 @@ class TelegramSkill(PlatformSkill):
                 mentions_self=called,
                 reply_to_self=bool(bot_id is not None and reply_user_id == bot_id),
                 meta={"chat_title": getattr(message.chat, "title", "") or "",
-                      "media": kind},
+                      "media": kind,
+                      "attachment_urls": await self._attachment_urls(message, kind)},
             )
         except Exception as e:
             # an handler must never take the bot down
@@ -200,7 +203,9 @@ class TelegramSkill(PlatformSkill):
         path = ""
         try:
             handle = await self.app.bot.get_file(message.voice.file_id)
-            fd, path = tempfile.mkstemp(suffix=".oga", prefix="tg_voice_")
+            # Telegram voice notes are Ogg/Opus. Groq/OpenAI validates the
+            # filename suffix before inspecting the bytes, so `.ogg` matters.
+            fd, path = tempfile.mkstemp(suffix=".ogg", prefix="tg_voice_")
             os.close(fd)
             await handle.download_to_drive(path)
             transcript = (await asyncio.to_thread(self.stt.transcribe, path) or "").strip()
@@ -217,6 +222,39 @@ class TelegramSkill(PlatformSkill):
         line = f"[voice note] {transcript}"
         return f"{line} — {caption}" if caption else line
 
+    async def _attachment_urls(self, message, kind: str) -> List[str]:
+        """Download image media into a short-lived data URL for vision models.
+
+        Telegram file URLs require the bot token and are therefore not passed
+        to an external model. Unsupported or failed downloads remain visible
+        through the normal textual media label.
+        """
+        if kind not in ("photo", "document") or self.app is None:
+            return []
+        media = getattr(message, kind, None)
+        if kind == "photo":
+            media = media[-1] if media else None
+        if media is None:
+            return []
+        mime = getattr(media, "mime_type", None) or "image/jpeg"
+        if not str(mime).lower().startswith("image/"):
+            return []
+        path = ""
+        try:
+            handle = await self.app.bot.get_file(media.file_id)
+            fd, path = tempfile.mkstemp(suffix=".img", prefix="tg_image_")
+            os.close(fd)
+            await handle.download_to_drive(path)
+            with open(path, "rb") as image:
+                encoded = base64.b64encode(image.read()).decode("ascii")
+            return [f"data:{mime};base64,{encoded}"]
+        except Exception as e:
+            logger.warning(f"Telegram image download failed: {e}")
+            return []
+        finally:
+            if path and os.path.exists(path):
+                os.remove(path)
+
     def _author(self, user) -> Author:
         owner = self._owner_id()
         return self.build_author(
@@ -232,10 +270,13 @@ class TelegramSkill(PlatformSkill):
         if self.app is None:
             return False
         try:
-            await self.app.bot.send_message(
+            sent = await self.app.bot.send_message(
                 chat_id=int(channel_id), text=text,
                 reply_to_message_id=int(reply_to) if reply_to else None,
             )
+            message_id = getattr(sent, "message_id", None)
+            if message_id is not None:
+                self._last_sent_ids[str(channel_id)] = str(message_id)
             return True
         except Exception as e:
             logger.error(f"Telegram send failed: {e}")
@@ -263,6 +304,38 @@ class TelegramSkill(PlatformSkill):
             logger.info(f"Telegram refused the reaction {emoji!r}: {e}")
             return False
 
+    @property
+    def supports_message_editing(self) -> bool:
+        return True
+
+    @property
+    def supports_message_deletion(self) -> bool:
+        return True
+
+    async def edit_text(self, channel_id: str, message_id: str, text: str) -> bool:
+        if self.app is None:
+            return False
+        try:
+            await self.app.bot.edit_message_text(
+                chat_id=int(channel_id), message_id=int(message_id), text=text,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Telegram edit failed: {e}")
+            return False
+
+    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+        if self.app is None:
+            return False
+        try:
+            await self.app.bot.delete_message(
+                chat_id=int(channel_id), message_id=int(message_id),
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Telegram delete failed: {e}")
+            return False
+
     # --- prompt context -----------------------------------------------------
 
     @property
@@ -275,23 +348,90 @@ class TelegramSkill(PlatformSkill):
             "thread, one per chat, while you keep doing whatever you're doing — you "
             "don't answer them from here.\n"
             "- `telegram_send_message` writes in a chat unprompted, if you feel like "
-            "saying something first."
+            "saying something first.\n"
+            "- `telegram_edit_last_message` and `telegram_delete_last_message` act on "
+            "the most recent message Bea sent in that chat; explicit message-id tools "
+            "are available for other known messages."
         )
 
     def tools(self) -> List:
         from src.core.agent.tools import Tool
         if not self.active:
             return []
-        return [Tool(
-            "telegram_send_message",
-            "Write in a telegram chat on your own initiative (by chat id). Each LINE "
-            "becomes its own message.",
-            {"type": "object", "properties": {
-                "chat_id": {"type": "string"}, "text": {"type": "string"}},
-             "required": ["chat_id", "text"]},
-            self._tool_send_message,
-        )]
+        return [
+            Tool(
+                "telegram_send_message",
+                "Write in a telegram chat on your own initiative (by chat id). Each LINE "
+                "becomes its own message.",
+                {"type": "object", "properties": {
+                    "chat_id": {"type": "string"}, "text": {"type": "string"}},
+                 "required": ["chat_id", "text"]},
+                self._tool_send_message,
+            ),
+            Tool(
+                "telegram_edit_message",
+                "Edit a Telegram message by chat id and message id. Telegram only permits "
+                "a bot to edit its own messages.",
+                {"type": "object", "properties": {
+                    "chat_id": {"type": "string"}, "message_id": {"type": "string"},
+                    "text": {"type": "string"}},
+                 "required": ["chat_id", "message_id", "text"]},
+                self._tool_edit_message,
+            ),
+            Tool(
+                "telegram_delete_message",
+                "Delete a Telegram message by chat id and message id. Deleting other "
+                "people's messages requires the bot's group administrator delete permission.",
+                {"type": "object", "properties": {
+                    "chat_id": {"type": "string"}, "message_id": {"type": "string"}},
+                 "required": ["chat_id", "message_id"]},
+                self._tool_delete_message,
+            ),
+            Tool(
+                "telegram_edit_last_message",
+                "Edit the most recent Telegram message Bea sent in a chat.",
+                {"type": "object", "properties": {
+                    "chat_id": {"type": "string"}, "text": {"type": "string"}},
+                 "required": ["chat_id", "text"]},
+                self._tool_edit_last_message,
+            ),
+            Tool(
+                "telegram_delete_last_message",
+                "Delete the most recent Telegram message Bea sent in a chat.",
+                {"type": "object", "properties": {
+                    "chat_id": {"type": "string"}},
+                 "required": ["chat_id"]},
+                self._tool_delete_last_message,
+            ),
+        ]
 
     async def _tool_send_message(self, chat_id: str, text: str) -> str:
         sent = await self.deliver(str(chat_id), text)
         return f"Sent ({len(sent)} message(s))." if sent else "FAILED: nothing was sent."
+
+    async def _tool_edit_message(self, chat_id: str, message_id: str, text: str) -> str:
+        return "Edited." if await self.edit_text(chat_id, message_id, text) else (
+            "FAILED: Telegram bots can only edit their own messages, and the message "
+            "must still be editable."
+        )
+
+    async def _tool_delete_message(self, chat_id: str, message_id: str) -> str:
+        return "Deleted." if await self.delete_message(chat_id, message_id) else (
+            "FAILED: check the chat id, message id, and Telegram administrator delete "
+            "permission when deleting someone else's message."
+        )
+
+    async def _tool_edit_last_message(self, chat_id: str, text: str) -> str:
+        message_id = self._last_sent_ids.get(str(chat_id))
+        if not message_id:
+            return "FAILED: no recent Telegram message from Bea is known in that chat."
+        return await self._tool_edit_message(chat_id, message_id, text)
+
+    async def _tool_delete_last_message(self, chat_id: str) -> str:
+        message_id = self._last_sent_ids.get(str(chat_id))
+        if not message_id:
+            return "FAILED: no recent Telegram message from Bea is known in that chat."
+        result = await self._tool_delete_message(chat_id, message_id)
+        if result == "Deleted.":
+            self._last_sent_ids.pop(str(chat_id), None)
+        return result

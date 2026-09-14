@@ -100,6 +100,22 @@ class PlatformSkill(Skill):
     async def send_typing(self, channel_id: str) -> None:
         """Shows "is typing". Cosmetic: a failure here must never lose a message."""
 
+    @property
+    def supports_message_editing(self) -> bool:
+        return False
+
+    @property
+    def supports_message_deletion(self) -> bool:
+        return False
+
+    async def edit_text(self, channel_id: str, message_id: str, text: str) -> bool:
+        """Edits a message when the platform permits it."""
+        return False
+
+    async def delete_message(self, channel_id: str, message_id: str) -> bool:
+        """Deletes a message when the platform permits it."""
+        return False
+
     async def send_dm(self, native_id: str, text: str) -> Optional[str]:
         """Opens a private conversation and writes in it.
 
@@ -170,6 +186,23 @@ class PlatformSkill(Skill):
                      "required": ["emoji"]},
                     lambda emoji: self._tool_react(channel_id, reply_to, emoji),
                 ))
+            if self.supports_message_editing:
+                tools.append(Tool(
+                    "edit_message",
+                    "Edit the last message in this conversation. The platform may only "
+                    "allow editing messages sent by you.",
+                    {"type": "object", "properties": {"text": {"type": "string"}},
+                     "required": ["text"]},
+                    lambda text: self._tool_edit(channel_id, reply_to, text),
+                ))
+            if self.supports_message_deletion:
+                tools.append(Tool(
+                    "delete_message",
+                    "Delete the last message in this conversation. This may require "
+                    "administrator or moderation permission.",
+                    {"type": "object", "properties": {}, "required": []},
+                    lambda: self._tool_delete(channel_id, reply_to),
+                ))
         return tools
 
     @property
@@ -190,6 +223,14 @@ class PlatformSkill(Skill):
     async def _tool_react(self, channel_id: str, message_id: str, emoji: str) -> str:
         ok = await self.react(channel_id, message_id, emoji)
         return "Reacted." if ok else "FAILED: could not react."
+
+    async def _tool_edit(self, channel_id: str, message_id: str, text: str) -> str:
+        ok = await self.edit_text(channel_id, message_id, text)
+        return "Edited." if ok else "FAILED: could not edit message."
+
+    async def _tool_delete(self, channel_id: str, message_id: str) -> str:
+        ok = await self.delete_message(channel_id, message_id)
+        return "Deleted." if ok else "FAILED: could not delete message."
 
     async def react(self, channel_id: str, message_id: str, emoji: str) -> bool:
         return False

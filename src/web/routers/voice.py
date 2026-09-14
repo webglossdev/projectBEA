@@ -6,7 +6,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from fastapi import (
     APIRouter,
@@ -38,6 +38,7 @@ class DiscordChatRequest(BaseModel):
     messageId: Optional[str] = None
     isDm: bool = False
     whitelisted: bool = True
+    attachment_urls: List[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("message")
     @classmethod
@@ -131,7 +132,7 @@ async def discord_chat(request: DiscordChatRequest, brain: AIVtuberBrain = Depen
     brain.perceive_discord_text(
         request.message, request.username, request.channelId,
         message_id=request.messageId, user_id=request.userId, is_dm=request.isDm,
-        whitelisted=request.whitelisted,
+        whitelisted=request.whitelisted, attachment_urls=request.attachment_urls,
     )
     return {"status": "perceived"}
 
@@ -151,7 +152,12 @@ async def discord_voice_message(
     """Transcribe a Discord audio attachment and route it like a text message."""
     temp_dir = Path("temp_discord")
     temp_dir.mkdir(exist_ok=True)
-    suffix = Path(file.filename or "").suffix[:8] or ".audio"
+    suffix = Path(file.filename or "").suffix[:8].lower() or ".audio"
+    # Telegram/Discord clients commonly name Ogg/Opus voice notes `.oga`;
+    # Groq/OpenAI's transcription endpoint accepts the same bytes as `.ogg`
+    # but rejects `.oga` during filename validation.
+    if suffix == ".oga":
+        suffix = ".ogg"
     temp_file = temp_dir / f"message_{uuid.uuid4().hex}{suffix}"
 
     try:

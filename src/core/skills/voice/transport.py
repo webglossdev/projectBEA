@@ -182,6 +182,16 @@ class DiscordTransport:
         return await self._request("POST", "/react",
                                    {"channelId": channel_id, "messageId": message_id, "emoji": emoji})
 
+    async def edit_message(self, channel_id: str, message_id: str,
+                           content: str) -> Dict[str, Any]:
+        return await self._request("POST", "/edit",
+                                   {"channelId": channel_id, "messageId": message_id,
+                                    "content": content})
+
+    async def delete_message(self, channel_id: str, message_id: str) -> Dict[str, Any]:
+        return await self._request("POST", "/delete",
+                                   {"channelId": channel_id, "messageId": message_id})
+
     async def send_dm(self, user_id: str, content: str) -> Dict[str, Any]:
         return await self._request("POST", "/dm", {"userId": user_id, "content": content})
 

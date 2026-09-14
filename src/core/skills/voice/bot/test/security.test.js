@@ -91,6 +91,72 @@ test('the server accepts an authenticated send', async () => {
     }
 });
 
+test('the server edits a message authored by the bot', async () => {
+    const { port, close, edited } = await listen({ targetAuthorId: 'bot' });
+    try {
+        const res = await post(port, '/edit',
+            { channelId: '1', messageId: 'm1', content: 'updated' },
+            { authorization: 'Bearer test-token' });
+        assert.equal(res.status, 200);
+        assert.deepEqual(edited, ['updated']);
+    } finally {
+        await close();
+    }
+});
+
+test('the server refuses to edit another member message', async () => {
+    const { port, close } = await listen({ targetAuthorId: 'member' });
+    try {
+        const res = await post(port, '/edit',
+            { channelId: '1', messageId: 'm1', content: 'updated' },
+            { authorization: 'Bearer test-token' });
+        assert.equal(res.status, 403);
+    } finally {
+        await close();
+    }
+});
+
+test('the server deletes the bot message without moderation permission', async () => {
+    const { port, close, deleted } = await listen({ targetAuthorId: 'bot' });
+    try {
+        const res = await post(port, '/delete',
+            { channelId: '1', messageId: 'm1' },
+            { authorization: 'Bearer test-token' });
+        assert.equal(res.status, 200);
+        assert.equal(deleted.length, 1);
+    } finally {
+        await close();
+    }
+});
+
+test('the server refuses to delete another member message without permission', async () => {
+    const { port, close } = await listen({ targetAuthorId: 'member' });
+    try {
+        const res = await post(port, '/delete',
+            { channelId: '1', messageId: 'm1' },
+            { authorization: 'Bearer test-token' });
+        assert.equal(res.status, 403);
+    } finally {
+        await close();
+    }
+});
+
+test('the server deletes another member message with Manage Messages', async () => {
+    const { port, close, deleted } = await listen({
+        targetAuthorId: 'member',
+        manageMessages: true,
+    });
+    try {
+        const res = await post(port, '/delete',
+            { channelId: '1', messageId: 'm1' },
+            { authorization: 'Bearer test-token' });
+        assert.equal(res.status, 200);
+        assert.equal(deleted.length, 1);
+    } finally {
+        await close();
+    }
+});
+
 test('health needs the token too', async () => {
     const { port, close } = await listen();
     try {
@@ -110,12 +176,22 @@ function fakeRes() {
     return res;
 }
 
-function fakeClient(sent) {
+function fakeClient(sent, { targetAuthorId = 'bot', manageMessages = false, edited, deleted } = {}) {
     const channel = {
         isTextBased: () => true,
         send: async (content) => { sent.push([channel.id, content]); return { id: 'm1' }; },
         sendTyping: async () => {},
-        messages: { fetch: async () => ({ reply: async () => ({ id: 'm2' }), react: async () => {} }) },
+        guild: {},
+        permissionsFor: () => ({ has: () => manageMessages }),
+        messages: {
+            fetch: async () => ({
+                author: { id: targetAuthorId },
+                reply: async () => ({ id: 'm2' }),
+                react: async () => {},
+                edit: async (content) => { edited.push(content); },
+                delete: async () => { deleted.push(true); },
+            }),
+        },
     };
     return {
         user: { tag: 'bea#0001', username: 'bea', id: 'bot' },
@@ -125,10 +201,12 @@ function fakeClient(sent) {
     };
 }
 
-async function listen() {
+async function listen(options = {}) {
     const sent = [];
+    const edited = [];
+    const deleted = [];
     const app = createServer({
-        client: fakeClient(sent),
+        client: fakeClient(sent, { ...options, edited, deleted }),
         voiceManager: { handleJoin: async () => true, leaveAll: () => {} },
         token: 'test-token',
     });
@@ -138,6 +216,8 @@ async function listen() {
     return {
         port: server.address().port,
         sent,
+        edited,
+        deleted,
         close: () => new Promise((r) => server.close(r)),
     };
 }
