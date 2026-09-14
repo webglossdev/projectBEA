@@ -125,71 +125,53 @@ function MindSection({ config, update, updateSkill }) {
 
 // --- what thinks for her ----------------------------------------------------
 
+const LLM_PROVIDERS = [
+    { id: 'openrouter', label: 'OpenRouter', blurb: 'One endpoint, almost any model.' },
+    { id: 'openai', label: 'OpenAI', blurb: 'GPT models, called directly.' },
+    { id: 'groq', label: 'Groq', blurb: 'Fastest inference, fewer models.' },
+    { id: 'google', label: 'Google AI Studio', blurb: 'Gemini, with a free tier.' },
+    { id: 'claude', label: 'Claude', blurb: 'Anthropic, called directly.' },
+    { id: 'local', label: 'Local models', blurb: 'Ollama or LM Studio. No key, all offline.' },
+    { id: 'openai_compat', label: 'Custom OpenAI', blurb: 'Any OpenAI-protocol server.' },
+    { id: 'anthropic_compat', label: 'Custom Anthropic', blurb: 'Any Messages-protocol server.' },
+];
+
+const LLM_KEY_FIELDS = {
+    openrouter: 'openrouter_key', openai: 'openai_key', groq: 'groq_key',
+    google: 'google_key', claude: 'claude_key', local: 'local_key',
+    openai_compat: 'openai_compat_key', anthropic_compat: 'anthropic_compat_key',
+};
+
+const LLM_MODEL_FIELDS = {
+    openrouter: 'openrouter_model', openai: 'openai_model', groq: 'groq_model',
+    google: 'google_model', claude: 'claude_model', local: 'local_model',
+    openai_compat: 'openai_compat_model', anthropic_compat: 'anthropic_compat_model',
+};
+
+const LLM_URL_FIELDS = {
+    local: 'local_base_url',
+    openai_compat: 'openai_compat_base_url',
+    anthropic_compat: 'anthropic_compat_base_url',
+};
+
+const LLM_KEY_PLACEHOLDERS = {
+    openrouter: 'sk-or-…', openai: 'sk-…', groq: 'gsk-…', google: 'AIza…',
+    claude: 'sk-ant-…', local: 'usually empty', openai_compat: 'if the endpoint wants one',
+    anthropic_compat: 'if the endpoint wants one',
+};
+
+const LLM_MODEL_PLACEHOLDERS = {
+    openrouter: 'deepseek/deepseek-v4-flash', openai: 'gpt-5', groq: 'openai/gpt-oss-120b',
+    google: 'gemini-3.8-flash', claude: 'claude-sonnet-5', local: 'qwen3:8b',
+    openai_compat: 'the model id the endpoint serves',
+    anthropic_compat: 'the model id the endpoint serves',
+};
+
 function EngineSection({ config, update, secrets }) {
-    const providerAliases = {
-        google: 'google_ai_studio',
-        gemini: 'google_ai_studio',
-        openai_compatible: 'openai_compat',
-        ollama: 'local',
-        lmstudio: 'local',
-        anthropic: 'claude',
-        anthropic_compatible: 'anthropic_compat',
-    };
-    const provider = providerAliases[config.llm_provider] || config.llm_provider || 'openrouter';
-    const poolsActive = Boolean(config.models?.mind?.length || config.models?.background?.length);
-    const keyField = {
-        openrouter: 'openrouter_key',
-        openai: 'openai_key',
-        groq: 'groq_key',
-        google_ai_studio: 'google_ai_studio_key',
-        openai_compat: 'openai_compat_key',
-        local: 'local_key',
-        claude: 'claude_key',
-        anthropic_compat: 'anthropic_compat_key',
-    }[provider] || 'openrouter_key';
-
-    const modelField = {
-        openrouter: 'openrouter_model',
-        openai: 'openai_model',
-        groq: 'groq_model',
-        google_ai_studio: 'google_ai_studio_model',
-        openai_compat: 'openai_compat_model',
-        local: 'local_model',
-        claude: 'claude_model',
-        anthropic_compat: 'anthropic_compat_model',
-    }[provider] || 'openrouter_model';
-
-    const baseUrlField = {
-        openai_compat: 'openai_compat_base_url',
-        local: 'local_base_url',
-        anthropic_compat: 'anthropic_compat_base_url',
-    }[provider];
-
-    const keyPlaceholder = {
-        openrouter: 'sk-or-…',
-        openai: 'sk-…',
-        groq: 'gsk_…',
-        google_ai_studio: 'AIza…',
-        openai_compat: 'Optional (e.g. sk-…)',
-        local: 'Optional (defaults to not-needed)',
-        claude: 'sk-ant-…',
-        anthropic_compat: 'Optional (defaults to not-needed)',
-    }[provider] || 'sk-…';
-
-    const modelPlaceholder = {
-        openrouter: 'deepseek/deepseek-v4-flash',
-        openai: 'gpt-5',
-        groq: 'openai/gpt-oss-120b',
-        google_ai_studio: 'gemini-2.0-flash',
-        openai_compat: 'gpt-4o-mini',
-        local: 'llama3.2',
-        claude: 'claude-3-7-sonnet-latest',
-        anthropic_compat: 'claude-3-7-sonnet-latest',
-    }[provider] || 'model-name';
-
-    const isLocal = provider === 'local';
-    const hasBaseUrl = Boolean(baseUrlField);
-    const isOptionalKey = isLocal || provider === 'openai_compat' || provider === 'anthropic_compat';
+    const provider = config.llm_provider;
+    const keyField = LLM_KEY_FIELDS[provider];
+    const modelField = LLM_MODEL_FIELDS[provider];
+    const urlField = LLM_URL_FIELDS[provider];
 
     return (
         <>
@@ -197,86 +179,37 @@ function EngineSection({ config, update, secrets }) {
                 <ProviderChoice
                     value={provider}
                     onChange={(id) => update('llm_provider', id)}
-                    disabled={poolsActive}
                     columns={4}
-                    options={[
-                        { id: 'openrouter', label: 'OpenRouter', blurb: 'One endpoint, almost any model.' },
-                        { id: 'openai', label: 'OpenAI', blurb: 'GPT models, called directly.' },
-                        { id: 'groq', label: 'Groq', blurb: 'Fastest inference, fewer models.' },
-                        { id: 'google_ai_studio', label: 'Google AI Studio', blurb: 'Official Gemini API.' },
-                        { id: 'openai_compat', label: 'OpenAI Compat', blurb: 'Together, vLLM, custom proxy.' },
-                        { id: 'local', label: 'Local LLM', blurb: 'Ollama, LM Studio, no key required.' },
-                        { id: 'claude', label: 'Claude', blurb: 'Anthropic Messages API direct.' },
-                        { id: 'anthropic_compat', label: 'Anthropic Compat', blurb: 'Anthropic Messages proxy.' },
-                    ]}
+                    options={LLM_PROVIDERS}
                 />
-                {poolsActive && (
-                    <p className="text-[11px] leading-snug text-faint">
-                        Model pools are active, so they choose the running providers. Empty the mind and background pools in Models before selecting a legacy provider here.
-                    </p>
-                )}
             </Group>
 
-            <Group title="Configuration & Credentials">
-                {isLocal && (
-                    <div className="flex flex-wrap items-center gap-2 pb-1">
-                        <span className="text-[11px] font-medium text-faint">Presets:</span>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                                update('local_base_url', 'http://localhost:11434/v1');
-                                update('local_model', 'llama3.2');
-                            }}
-                        >
-                            🦙 Ollama
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                                update('local_base_url', 'http://localhost:1234/v1');
-                                update('local_model', 'local-model');
-                            }}
-                        >
-                            🧪 LM Studio
-                        </Button>
-                    </div>
-                )}
-
-                {hasBaseUrl && (
+            <Group title="Credentials">
+                {urlField && (
                     <Field
-                        label="Base URL"
-                        help="The HTTP endpoint exposing the OpenAI/Anthropic compatible API."
+                        label="Endpoint URL"
+                        help={provider === 'local'
+                            ? 'Ollama answers at :11434, LM Studio at :1234. No key, no account.'
+                            : 'The base URL, ending in /v1 — without /chat/completions.'}
                     >
                         <TextInput
-                            value={config[baseUrlField] || ''}
-                            onChange={(e) => update(baseUrlField, e.target.value)}
-                            placeholder={
-                                provider === 'local'
-                                    ? 'http://localhost:11434/v1'
-                                    : provider === 'openai_compat'
-                                    ? 'http://localhost:8000/v1'
-                                    : 'https://api.anthropic.com/v1'
-                            }
+                            value={config[urlField] || ''}
+                            onChange={(e) => update(urlField, e.target.value)}
+                            placeholder={provider === 'local' ? 'http://localhost:11434/v1' : 'https://…/v1'}
                             className="font-mono"
                         />
                     </Field>
                 )}
 
                 <Field
-                    label={isOptionalKey ? 'API key (optional)' : 'API key'}
+                    label={provider === 'local' || urlField ? 'API key (optional)' : 'API key'}
                     action={<SecretState configured={secrets[keyField]} envHint="saved to .env" />}
-                    help={
-                        isOptionalKey
-                            ? 'Optional for this provider. Saved to .env if provided.'
-                            : 'Saved to .env, which is the only file keys are kept in — config.json never carries one. Empty the box to forget the key.'
-                    }
+                    help="Saved to .env, which is the only file keys are kept in — config.json never carries one. Empty the box to forget the key."
                 >
                     <SecretInput
                         value={config[keyField] || ''}
                         onChange={(e) => update(keyField, e.target.value)}
-                        placeholder={keyPlaceholder}
+                        placeholder={LLM_KEY_PLACEHOLDERS[provider]}
                     />
                 </Field>
 
@@ -284,7 +217,7 @@ function EngineSection({ config, update, secrets }) {
                     <TextInput
                         value={config[modelField] || ''}
                         onChange={(e) => update(modelField, e.target.value)}
-                        placeholder={modelPlaceholder}
+                        placeholder={LLM_MODEL_PLACEHOLDERS[provider]}
                         className="font-mono"
                     />
                 </Field>

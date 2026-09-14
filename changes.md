@@ -602,3 +602,116 @@ The following entries summarize the earlier changes that were carried into
 - The final working tree is clean of tracked changes. Ignored local state
   remains present for the virtual environment, Discord `node_modules`, caches,
   bytecode, and `data/vtube_studio_token.json`; none is staged or published.
+## 2026-09-14 — Upstream synchronization: official LLM providers replace the fork implementation
+
+### Trigger and scope
+
+- The user asked to synchronize with the official project again, because the
+  fork's LLM provider expansion (pull request #23) had been rejected and
+  implemented differently upstream. The rejected implementation is removed and
+  the official one adopted; every other selected custom change is preserved.
+- The instruction in the 2026-09-14 entry above to "not delete or overwrite the
+  provider implementation" is explicitly superseded by this decision.
+- Fetched `upstream/main`, which had advanced by 50 commits (`fcacb224` …
+  `107b9b1`) while the customized `main` was 35 commits ahead.
+- Upstream's `feat/llm-providers` work (merge `e1d6538`, PR #24) is the official
+  replacement for the closed PR #23.
+
+### What upstream replaced
+
+- `src/modules/llm/` was rewritten around three transports over aiohttp
+  (`base.py` `AsyncLLMClient`, `chat.py`, `responses.py`, `anthropic.py`) with
+  provider presets as data in `providers.py` and a preset-driven `factory.py`.
+  `openai_compat.py`, `openai_llm.py`, `groq_llm.py` and `openrouter_llm.py`
+  were deleted; these transports no longer use the `openai` SDK.
+- Official provider ids are `openai`, `openrouter`, `groq`, `google`, `claude`,
+  `openai_compat`, `anthropic_compat`, `local`. There are no aliases.
+- Official config keys: `google_key` / `GOOGLE_API_KEY`, `claude_key` /
+  `ANTHROPIC_API_KEY`, `openai_compat_key` (+ `openai_compat_base_url`, and the
+  new `openai_compat_api` = `chat|responses`), `anthropic_compat_key`
+  (+ `anthropic_compat_base_url`), `local_key` (+ `local_base_url`), with
+  official defaults (`gemini-3.8-flash`, `claude-sonnet-5`, `qwen3:8b`, `gpt-5`).
+- The mind/context layer was rewritten for release 2.5: `conversation.py`,
+  `recap.py` and `scheduler.py` were deleted and replaced by `handoff.py`,
+  `single_context.py` and `token_budget.py`. Scoped conversation turns
+  (`scoped_conversations`, `conversation_tools`, `emit_text`) no longer exist;
+  `PlatformSkill` now exposes tools with explicit ids from the one loop.
+- Upstream consolidated twenty-six test modules into new files
+  (`test_single_context.py`, `test_llm_providers.py`, `test_llm_transports.py`,
+  `test_grounding.py`, `test_spontaneous_window.py`), and the Discord bot gained
+  DAVE voice, owner access and a whitelist under `data/`.
+
+### Removed from this repository
+
+- `src/modules/llm/anthropic_compat.py`, `anthropic_compat_llm.py`,
+  `claude_llm.py`, `google_ai_studio_llm.py`, `local_llm.py`,
+  `openai_compat_generic_llm.py`, the fork-only `tests/test_new_llm_providers.py`,
+  and the provider-specific edits to `src/modules/llm/factory.py`,
+  `src/core/agent/registry.py` (`LEGACY_MODEL_FIELDS`),
+  `src/web/routers/status.py`, `src/cli.py`,
+  `src/setup/{wizard,doctor,config_plan}.py`, the settings `.jsx`,
+  `.env.example`, `config.example.json` and the provider documentation.
+- A plain merge does not remove these: they are additions made only by this
+  repository, so git has nothing to conflict with. They were deleted explicitly.
+- Provider aliases (`gemini`, `ollama`, `lmstudio`, `anthropic`,
+  `google_ai_studio`, `openai_compatible`) are gone with the implementation. Any
+  `provider:model` pool entry or config value still using one now raises the
+  failover-safe `LLMConfigError` and must be renamed to the official id. This
+  clone has no `config.json` or `.env`, so nothing on disk needed migration; a
+  live instance must rename `google_ai_studio_key` → `google_key`,
+  `GOOGLE_AI_STUDIO_KEY`/`GEMINI_API_KEY` → `GOOGLE_API_KEY`,
+  `CLAUDE_API_KEY` → `ANTHROPIC_API_KEY`, and add `openai_compat_api`.
+
+### Preserved custom behavior
+
+- Voice messages: Discord audio attachments, `POST /discord/voice-message`,
+  Telegram voice notes as explicitly addressed turns, the Telegram `.ogg` STT
+  suffix, and Groq as the default STT provider.
+- Platform media and moderation: Telegram and Discord edit/delete actions
+  (including the `*_last_message` variants), attachment metadata, and Telegram
+  attachment data URLs for vision models.
+- The whole-config save hardening that ignores a stale `persona` snapshot.
+- The `/discord/voice-message` entry in the CI route contract test.
+- Repository hygiene, this private changelog, and the documented workflow.
+
+### Conflict resolutions
+
+- Upstream's side was taken for the replaced LLM layer, the CLI, the setup
+  wizard/doctor/config plan, the status router, the settings UI, the provider
+  docs and examples, the model registry, and the upstream test modules.
+- The replaced mind/context files were accepted as deleted, which removed the
+  image plumbing that used to live in `conversation.py`.
+- `src/core/skills/platform.py`, `src/core/skills/telegram/surface.py`,
+  `src/core/skills/voice/surface.py`, `src/core/config.py` and
+  `docs/skills/telegram.md` were merged with a real three-way merge that keeps
+  every non-conflicting custom addition and takes upstream only where the same
+  lines actually collided. Taking either whole file would have silently dropped
+  the moderation tools and the `stt_provider = "groq"` default; the first pass
+  did exactly that, and the Telegram media tests caught it.
+- Upstream's prompt text in the Telegram and Discord `context_section` was kept,
+  because the scoped-thread wording it replaced is obsolete after 2.5.
+
+### Known follow-ups (not yet done)
+
+- Telegram photos and Discord images no longer reach vision models: the
+  conversion lived in `conversation.py` and in the removed Anthropic-compatible
+  client. Upstream's `AnthropicClient._to_messages` also stringifies non-string
+  content, so image parts must be re-added there, and the message-building step
+  in `single_context.py` must attach images again.
+- The prompt sections for `telegram_edit_message`, `telegram_delete_message`,
+  `telegram_edit_last_message`, `telegram_delete_last_message` and their Discord
+  counterparts were replaced by upstream's text. The tools still exist and must
+  be described again in the prompts and docs.
+- Upstream deleted `tests/test_telegram.py` and `tests/test_discord_delivery.py`,
+  which held this repository's regression tests for the edit/delete and Discord
+  moderation paths. Equivalent tests must be re-homed beside the new upstream
+  test modules.
+
+### Verification
+
+- `uv run ruff check src tests`: passed.
+- Affected modules after the three-way re-merge: `134 passed` for the Telegram
+  media, voice API, settings API, routing and config-write modules.
+- The full suite result and the publication record are in the entry below.
+
+

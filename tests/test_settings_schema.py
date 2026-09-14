@@ -153,8 +153,8 @@ def test_omitted_settings_are_left_alone():
 
 def test_a_value_out_of_range_is_refused():
     with pytest.raises(ValidationError) as e:
-        apply_section(config(), "attention", {"interject_threshold": 4.0})
-    assert "interject_threshold" in str(e.value)
+        apply_section(config(), "attention", {"followup_max_turns": 99})
+    assert "followup_max_turns" in str(e.value)
 
 
 def test_a_choice_that_is_not_on_the_list_is_refused():
@@ -215,12 +215,24 @@ def _keys(name: str) -> set:
 
 def test_telegram_can_be_told_what_to_read_and_how_to_answer():
     assert {"enabled", "token", "owner_id", "allowed_chats", "read_media",
-            "reactions", "followup_enabled", "followup_max_turns"} <= _keys("telegram")
+            "reactions", "group_salience"} <= _keys("telegram")
 
 
 def test_discord_exposes_its_safety_valves():
     assert {"invite_max_age_seconds", "invite_max_uses", "access_mode",
             "interrupt_threshold_ms"} <= _keys("discord")
+
+
+def test_discord_bot_baked_values_demand_a_restart():
+    # admin_id, access_mode and the invite knobs are baked into the bot
+    # subprocess environment at start: saving one without a restart used to
+    # report success while the running bot kept the old value, locking the
+    # owner out with no way to tell why.
+    sec = section("discord")
+    for key in ("admin_id", "access_mode", "invite_max_age_seconds", "invite_max_uses"):
+        setting = sec.get(key)
+        assert setting is not None, f"discord.{key} vanished from the schema"
+        assert setting.restart is True, f"discord.{key} must demand a restart"
 
 
 def test_twitch_exposes_the_events_it_can_now_see():
@@ -242,4 +254,6 @@ def test_a_setting_can_describe_itself_to_a_human():
 
 
 def test_the_follow_up_gate_is_tunable_from_the_dashboard():
-    assert {"followup_enabled", "followup_window_seconds", "followup_max_turns"} <= _keys("attention")
+    assert {"followup_enabled", "followup_window_seconds", "followup_max_turns",
+            "followup_max_interposed", "followup_active_bonus",
+            "followup_lookback"} <= _keys("attention")

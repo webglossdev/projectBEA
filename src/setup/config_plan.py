@@ -12,23 +12,44 @@ PROVIDER_KEYS = {
     "openrouter": ("openrouter_key", "OPENROUTER_API_KEY"),
     "openai": ("openai_key", "OPENAI_API_KEY"),
     "groq": ("groq_key", "GROQ_API_KEY"),
-    "google_ai_studio": ("google_ai_studio_key", "GOOGLE_AI_STUDIO_KEY"),
-    "openai_compat": ("openai_compat_key", "OPENAI_COMPAT_API_KEY"),
-    "local": ("local_key", "LOCAL_API_KEY"),
+    "google": ("google_key", "GOOGLE_API_KEY"),
     "claude": ("claude_key", "ANTHROPIC_API_KEY"),
+    "openai_compat": ("openai_compat_key", "OPENAI_COMPAT_API_KEY"),
     "anthropic_compat": ("anthropic_compat_key", "ANTHROPIC_COMPAT_API_KEY"),
+    "local": ("local_key", "LOCAL_API_KEY"),
 }
 
-# provider -> (config field for the model, a default that exists today)
+# provider -> (config field for the model, a default that exists today).
+# brought-your-own endpoints have no default: the owner names the model.
 PROVIDER_MODELS = {
     "openrouter": ("openrouter_model", "deepseek/deepseek-v4-flash"),
     "openai": ("openai_model", "gpt-5"),
     "groq": ("groq_model", "openai/gpt-oss-120b"),
-    "google_ai_studio": ("google_ai_studio_model", "gemini-2.0-flash"),
-    "openai_compat": ("openai_compat_model", "gpt-4o-mini"),
-    "local": ("local_model", "llama3.2"),
-    "claude": ("claude_model", "claude-3-7-sonnet-latest"),
-    "anthropic_compat": ("anthropic_compat_model", "claude-3-7-sonnet-latest"),
+    "google": ("google_model", "gemini-3.8-flash"),
+    "claude": ("claude_model", "claude-sonnet-5"),
+    "openai_compat": ("openai_compat_model", ""),
+    "anthropic_compat": ("anthropic_compat_model", ""),
+    "local": ("local_model", "qwen3:8b"),
+}
+
+# providers whose endpoint the owner brings: config field for its url
+PROVIDER_URLS = {
+    "openai_compat": "openai_compat_base_url",
+    "anthropic_compat": "anthropic_compat_base_url",
+    "local": "local_base_url",
+}
+
+# default urls worth offering blind; the local one is ollama's, lm studio's
+# is one paste away
+PROVIDER_URL_DEFAULTS = {
+    "openai_compat": "",
+    "anthropic_compat": "",
+    "local": "http://localhost:11434/v1",
+}
+
+LOCAL_URLS = {
+    "ollama": "http://localhost:11434/v1",
+    "lm studio": "http://localhost:1234/v1",
 }
 
 # secrets that belong to a skill rather than to a provider
@@ -58,13 +79,9 @@ def apply_answers(config, answers: Dict[str, Any]):
     if answers.get("llm_key"):
         setattr(config, key_field, answers["llm_key"])
 
-    if answers.get("base_url"):
-        if provider == "openai_compat":
-            config.openai_compat_base_url = answers["base_url"]
-        elif provider == "local":
-            config.local_base_url = answers["base_url"]
-        elif provider == "anthropic_compat":
-            config.anthropic_compat_base_url = answers["base_url"]
+    url_field = PROVIDER_URLS.get(provider)
+    if url_field and answers.get("llm_base_url"):
+        setattr(config, url_field, answers["llm_base_url"])
 
     # an empty pool falls back to llm_provider, which is what a fresh setup wants
     config.models = {"mind": [], "background": []}

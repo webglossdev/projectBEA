@@ -2,58 +2,17 @@ from typing import Optional
 
 from src.core.agent.llm_client import LLMClient
 from src.interfaces.base_interfaces import STTInterface
+from src.modules.llm.anthropic import AnthropicClient
+from src.modules.llm.chat import ChatCompletionsClient
+from src.modules.llm.providers import ANTHROPIC, CHAT, RESPONSES, get
 from src.modules.llm.reasoning import DEFAULT_LEVEL, style_for
 from src.utils.logger import get_logger
 
 logger = get_logger("bea.llm.factory")
 
-# provider -> (config key for the api key, config key for the default model)
-_PROVIDERS = {
-    "openai": ("openai_key", "openai_model"),
-    "groq": ("groq_key", "groq_model"),
-    "openrouter": ("openrouter_key", "openrouter_model"),
-    # --- new providers ---
-    "google_ai_studio": ("google_ai_studio_key", "google_ai_studio_model"),
-    "google": ("google_ai_studio_key", "google_ai_studio_model"),
-    "gemini": ("google_ai_studio_key", "google_ai_studio_model"),
-    "openai_compat": ("openai_compat_key", "openai_compat_model"),
-    "openai_compatible": ("openai_compat_key", "openai_compat_model"),
-    "local": ("local_key", "local_model"),
-    "ollama": ("local_key", "local_model"),
-    "lmstudio": ("local_key", "local_model"),
-    "claude": ("claude_key", "claude_model"),
-    "anthropic": ("claude_key", "claude_model"),
-    "anthropic_compat": ("anthropic_compat_key", "anthropic_compat_model"),
-    "anthropic_compatible": ("anthropic_compat_key", "anthropic_compat_model"),
-}
-
-PROVIDER_ALIASES = {
-    "google": "google_ai_studio",
-    "gemini": "google_ai_studio",
-    "openai_compatible": "openai_compat",
-    "ollama": "local",
-    "lmstudio": "local",
-    "anthropic": "claude",
-    "anthropic_compatible": "anthropic_compat",
-}
-
-LEGACY_MODEL_FIELDS = {
-    provider: model_field for provider, (_, model_field) in _PROVIDERS.items()
-}
-
-OPTIONAL_KEY_PROVIDERS = {
-    "local", "ollama", "lmstudio",
-    "openai_compat", "openai_compatible",
-    "anthropic_compat", "anthropic_compatible",
-}
-
 
 class LLMConfigError(Exception):
     pass
-
-
-def canonical_provider(provider: str) -> str:
-    return PROVIDER_ALIASES.get(provider, provider)
 
 
 def build_client(provider: str, model: str, config,
@@ -62,88 +21,53 @@ def build_client(provider: str, model: str, config,
 
     The single place that knows how to instantiate a provider. `ModelRegistry`
     calls it once per pool entry; `build_llm` calls it for the legacy single-model
-    path.
+    path. Transports are natively async over aiohttp: no thread pools.
     """
-    requested_provider = provider
-    provider = canonical_provider(provider)
-    if provider not in _PROVIDERS:
-        raise LLMConfigError(f"Unknown LLM provider: {provider!r}. Valid: {list(_PROVIDERS)}")
+    preset = get(provider)
+    if preset is None:
+        from src.modules.llm.providers import PROVIDERS
 
-    key_field, _ = _PROVIDERS[provider]
-    api_key: str = getattr(config, key_field, None) or ""
-    if not api_key and provider not in OPTIONAL_KEY_PROVIDERS:
-        raise LLMConfigError(f"{key_field} is missing (set it via env, config.json, or CLI).")
+        raise LLMConfigError(f"Unknown LLM provider: {provider!r}. Valid: {list(PROVIDERS)}")
+
+    api_key = getattr(config, preset.key_field, None) if preset.key_field else None
+    if preset.needs_key and not api_key:
+        raise LLMConfigError(f"{preset.key_field} is missing (set it via env, config.json, or CLI).")
+
+    base_url = preset.base_url
+    if preset.url_field:
+        configured = (getattr(config, preset.url_field, None) or "").strip()
+        if configured:
+            base_url = configured
+    if not base_url:
+        raise LLMConfigError(f"{preset.url_field} is missing (the endpoint url for "
+                             f"{preset.id!r}).")
+
+    transport = preset.transport
+    if preset.api_choice_field:
+        choice = (getattr(config, preset.api_choice_field, None) or CHAT).strip().lower()
+        if choice not in (CHAT, RESPONSES):
+            raise LLMConfigError(f"{preset.api_choice_field} must be 'chat' or 'responses'.")
+        transport = choice
 
     level = (getattr(config, "models", None) or {}).get("reasoning", DEFAULT_LEVEL)
-    reasoning = style_for(provider, level)
+    reasoning = style_for(preset.id, level)
 
-    if provider == "openai":
-        from src.modules.llm.openai_llm import OpenAILLM
-        return OpenAILLM(api_key=api_key, model_name=model, stt_interface=stt,
-                         reasoning=reasoning)
-    if provider == "groq":
-        from src.modules.llm.groq_llm import GroqLLM
-        return GroqLLM(api_key=api_key, model_name=model, stt_interface=stt,
-                       reasoning=reasoning)
-    if provider == "openrouter":
-        from src.modules.llm.openrouter_llm import OpenRouterLLM
-        return OpenRouterLLM(api_key=api_key, model_name=model, stt_interface=stt,
-                             reasoning=reasoning)
+    fields = {"key_field": preset.key_field, "model_field": preset.model_field,
+              "url_field": preset.url_field}
+    if transport == RESPONSES:
+        from src.modules.llm.responses import ResponsesClient
 
-    # --- new providers ---
+        return ResponsesClient(base_url=base_url, model_name=model, api_key=api_key,
+                               stt=stt, reasoning=reasoning, **fields)
+    if transport == CHAT:
+        return ChatCompletionsClient(base_url=base_url, model_name=model, api_key=api_key,
+                                     stt=stt, reasoning=reasoning,
+                                     send_tool_choice=preset.send_tool_choice, **fields)
+    if transport == ANTHROPIC:
+        return AnthropicClient(base_url=base_url, model_name=model, api_key=api_key,
+                               stt=stt, reasoning=reasoning, **fields)
 
-    if provider in ("google_ai_studio", "google", "gemini"):
-        from src.modules.llm.google_ai_studio_llm import GoogleAIStudioLLM
-        return GoogleAIStudioLLM(api_key=api_key, model_name=model, stt_interface=stt,
-                                 reasoning=reasoning)
-
-    if provider in ("openai_compat", "openai_compatible"):
-        from src.modules.llm.openai_compat_generic_llm import OpenAICompatibleGenericLLM
-        return OpenAICompatibleGenericLLM(
-            base_url=getattr(config, "openai_compat_base_url", "http://localhost:8000/v1"),
-            api_key=api_key,
-            model_name=model,
-            stt_interface=stt,
-            reasoning=reasoning,
-        )
-
-    if provider in ("local", "ollama", "lmstudio"):
-        from src.modules.llm.local_llm import LocalLLM
-        default_base_url = (
-            "http://localhost:1234/v1"
-            if requested_provider == "lmstudio"
-            else "http://localhost:11434/v1"
-        )
-        configured_base_url = getattr(config, "local_base_url", None)
-        if requested_provider == "lmstudio" and configured_base_url in (
-            None,
-            "http://localhost:11434/v1",
-        ):
-            configured_base_url = default_base_url
-        return LocalLLM(
-            base_url=configured_base_url or default_base_url,
-            api_key=api_key,
-            model_name=model,
-            stt_interface=stt,
-            reasoning=reasoning,
-        )
-
-    if provider in ("claude", "anthropic"):
-        from src.modules.llm.claude_llm import ClaudeLLM
-        return ClaudeLLM(api_key=api_key, model_name=model, stt_interface=stt,
-                         reasoning=reasoning)
-
-    if provider in ("anthropic_compat", "anthropic_compatible"):
-        from src.modules.llm.anthropic_compat_llm import AnthropicCompatLLM
-        return AnthropicCompatLLM(
-            base_url=getattr(config, "anthropic_compat_base_url", "https://api.anthropic.com/v1"),
-            api_key=api_key,
-            model_name=model,
-            stt_interface=stt,
-            reasoning=reasoning,
-        )
-
-    raise LLMConfigError(f"Provider {provider!r} has no builder.")  # unreachable
+    raise LLMConfigError(f"Provider {provider!r} has no transport.")  # unreachable
 
 
 def build_llm(config, stt: Optional[STTInterface] = None) -> LLMClient:
@@ -151,9 +75,10 @@ def build_llm(config, stt: Optional[STTInterface] = None) -> LLMClient:
 
     Kept for callers that want one explicit model rather than a role pool.
     """
-    provider = config.llm_provider
-    canonical = canonical_provider(provider)
-    if canonical not in _PROVIDERS:
-        raise LLMConfigError(f"Unknown LLM provider: {provider!r}. Valid: {list(_PROVIDERS)}")
-    _, model_field = _PROVIDERS[canonical]
-    return build_client(provider, getattr(config, model_field), config, stt=stt)
+    preset = get(getattr(config, "llm_provider", ""))
+    if preset is None:
+        from src.modules.llm.providers import PROVIDERS
+
+        raise LLMConfigError(f"Unknown LLM provider: {config.llm_provider!r}. "
+                             f"Valid: {list(PROVIDERS)}")
+    return build_client(preset.id, getattr(config, preset.model_field), config, stt=stt)
