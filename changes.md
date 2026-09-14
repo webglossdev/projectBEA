@@ -714,4 +714,55 @@ The following entries summarize the earlier changes that were carried into
   media, voice API, settings API, routing and config-write modules.
 - The full suite result and the publication record are in the entry below.
 
+## 2026-09-14 — Synchronization publication record
+
+- Backup branch `backup/pre-sync-2026-09-14` (`6dff92b`) was created at the
+  pre-sync `main` and published to `origin` before any merge, so the previous
+  state is recoverable without rewriting history.
+- Synchronization branch `chore/sync-upstream-2026-09-14b` holds `f7add92`
+  (the upstream merge) and `1d6fd06` (the record above). It was merged into
+  `main` as `c8de212` and published to `origin`.
+- `origin/main` equals local `main` (`c8de212`); the synchronized `main` is
+  38 commits ahead of and 0 behind `upstream/main` (`107b9b1`).
+- Nothing was pushed to `upstream` and no pull request was created. The
+  documentation branch `docs/record-provider-sync-2026-09-14` carries this
+  entry.
+- The old fork branches `feat/expand-llm-providers` (the withdrawn pull
+  request #23), `feat/platform-moderation-media-fixes` and
+  `feat/voice-messages-stt` remain on `origin` as history. The provider branch
+  is superseded and must not be reused.
+- The `main` tree `ad72f4e` is byte-identical to the tree that was tested, so
+  the results below apply to the published branch.
+
+### Verification results
+
+- `uv run ruff check src tests`: passed.
+- `uvx pyright`: `0 errors, 0 warnings, 0 informations`.
+- `uv run pytest -q`: `1 failed, 1516 passed, 3 skipped` in 115.58 s. The
+  single failure,
+  `tests/test_history.py::test_the_deferred_write_arrives_on_its_own`, raises
+  `PermissionError` while reading a temporary session file that the writer
+  still holds open — a Windows file-sharing race, not a code regression.
+  `tests/test_history.py` and `src/core/memory/history.py` are byte-identical
+  to `upstream/main`, and the module passes in isolation (`7 passed`). It was
+  neither weakened nor skipped.
+- Affected modules: `134 passed` for the Telegram media, voice API, settings
+  API, routing and config-write modules.
+
+### Upstream inconsistency deliberately left as it is
+
+- Upstream's `src/web/frontend/src/pages/settings/sections.jsx` passes
+  `columns={4}` to `ProviderChoice`, while upstream's `parts.jsx` only
+  distinguishes `columns === 3` and `2`, so the provider grid renders two
+  columns. The withdrawn fork UI had handled four. It was reverted to match
+  upstream because it belongs to the removed provider work; the three-line fix
+  would be a legitimate standalone contribution if one is ever wanted.
+
+### Remaining follow-ups
+
+- The image-to-vision path for Telegram photos and Discord attachments is
+  still missing (see the follow-up list in the entry above). It is the one
+  part of the preserved media work that this synchronization did not carry
+  over, because the code lived in files upstream deleted or replaced.
+
 
