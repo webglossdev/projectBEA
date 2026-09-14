@@ -567,10 +567,11 @@ The following entries summarize the earlier changes that were carried into
 
 ## 2026-09-14 — Recovery checkpoint: settings save and validation
 
-- The current active branch is `feat/platform-moderation-media-fixes`. The
-  moderation/media implementation is still uncommitted and has not yet been
-  merged into customized `main`, pushed to `origin`, or submitted as a pull
-  request.
+- The implementation was committed on
+  `feat/platform-moderation-media-fixes` as `359827c` with the required
+  Copilot co-author trailer, then merged into local customized `main` with a
+  merge commit. A separate changelog-finalization branch is being used for
+  this final continuity update; no pull request has been created.
 - A full Python test run reached `1997 passed, 3 skipped` and exposed two
   stale Telegram tool-scope assertions. Those tests were updated to include
   the new `edit_message` and `delete_message` tools; the complete suite must
@@ -591,7 +592,7 @@ The following entries summarize the earlier changes that were carried into
   suite passed (`2002 passed, 3 skipped`); Ruff passed; Pyright reported
   `0 errors, 0 warnings, 0 informations`; Discord bot tests passed (`56
   passed`); Discord JavaScript syntax checks and `git diff --check` passed.
-- Remaining work after interruption: perform the final privacy/staging audit,
-  commit with the required Copilot trailer, merge into local `main`, push only
-  customized `main` to `origin` (and optionally publish the feature branch),
-  and verify the final refs. Do not create a PR.
+- Remaining work after interruption: commit this changelog-only update, merge
+  it into local `main`, push customized `main` and the feature branch only to
+  `origin`, and verify the final refs and clean working tree. Do not create a
+  PR or push private material to `upstream`.
