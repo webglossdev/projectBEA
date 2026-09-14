@@ -595,9 +595,10 @@ The following entries summarize the earlier changes that were carried into
 - Final publication completed: implementation commit `359827c` was merged
   into customized `main` (`7e6d400`), the continuity update was merged as
   `f690529`, and both `main` and `feat/platform-moderation-media-fixes` were
-  pushed only to `origin`. Local `main` and `origin/main` point to
-  `f690529338b7201b727cf9c71caf2df990dd247d`; it is currently 29 commits
-  ahead of `upstream/main` and no pull request was created.
+  pushed only to `origin`. The final changelog closeout is included in the
+  pushed `main`; local `main` and `origin/main` were verified equal. The
+  customized branch is currently 29 commits ahead of `upstream/main` and no
+  pull request was created.
 - The final working tree is clean of tracked changes. Ignored local state
   remains present for the virtual environment, Discord `node_modules`, caches,
   bytecode, and `data/vtube_studio_token.json`; none is staged or published.
