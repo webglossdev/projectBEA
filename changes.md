@@ -597,8 +597,8 @@ The following entries summarize the earlier changes that were carried into
   `f690529`, and both `main` and `feat/platform-moderation-media-fixes` were
   pushed only to `origin`. The final changelog closeout is included in the
   pushed `main`; local `main` and `origin/main` were verified equal. The
-  customized branch is currently 29 commits ahead of `upstream/main` and no
-  pull request was created.
+  customized branch remains ahead of `upstream/main` because it contains the
+  user's documented custom work, and no pull request was created.
 - The final working tree is clean of tracked changes. Ignored local state
   remains present for the virtual environment, Discord `node_modules`, caches,
   bytecode, and `data/vtube_studio_token.json`; none is staged or published.
