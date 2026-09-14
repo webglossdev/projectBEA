@@ -103,3 +103,30 @@ For local transcription:
 - Review the diff before merging a branch into `main`.
 - Decide explicitly whether an upstream pull request is worthwhile; a local
   merge into `main` is the default repository workflow.
+
+## 2026-09-14 — Upstream synchronization policy
+
+- The official ProjectBEA repository is configured as the `upstream` remote:
+  `https://github.com/emqnuele/projectBEA.git`.
+- `clean-projectBEA/main` is the distribution branch: it contains the latest
+  official `upstream/main` history plus our customized commits.
+- Before starting new work, fetch the official branch and compare it with
+  `main`:
+
+  ```powershell
+  git fetch upstream
+  git switch main
+  git merge upstream/main
+  ```
+
+- Resolve any conflicts while preserving intentional custom behavior, run the
+  relevant tests, and commit the synchronization merge on `main`.
+- New custom work still starts on a dedicated branch, is tested and committed,
+  then is merged into local `main`.
+- Upstream pull requests remain optional and must never be created
+  automatically.
+- `main` tracks `upstream/main` for accurate ahead/behind status. This is for
+  synchronization visibility; the customized `main` branch remains the
+  complete version distributed from this repository.
+- On 2026-09-14, after fetching upstream, the repository was 0 commits behind
+  and 5 commits ahead of `upstream/main`; no upstream merge was necessary.
